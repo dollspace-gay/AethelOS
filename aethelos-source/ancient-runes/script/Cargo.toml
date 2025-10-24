@@ -1,0 +1,8 @@
+[package]
+name = "script"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+corelib = { path = "../corelib" }

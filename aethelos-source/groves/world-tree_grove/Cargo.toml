@@ -1,0 +1,7 @@
+[package]
+name = "world-tree_grove"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]

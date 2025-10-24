@@ -1,0 +1,429 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         AethelOS Architecture                                 ║
+║                    "Symbiotic Computing in Action"                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           USER SPACE                                         │
+│                                                                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐               │
+│  │  Applications  │  │  Applications  │  │  Applications  │               │
+│  │                │  │                │  │                │               │
+│  └────────┬───────┘  └────────┬───────┘  └────────┬───────┘               │
+│           │                   │                   │                        │
+│           └───────────────────┴───────────────────┘                        │
+│                               │                                            │
+│                    ┌──────────▼──────────┐                                 │
+│                    │  Ancient Runes      │                                 │
+│                    │  (Core Libraries)   │                                 │
+│                    │                     │                                 │
+│                    │  • Corelib          │                                 │
+│                    │  • Weaving API      │                                 │
+│                    │  • Eldarin Script   │                                 │
+│                    └──────────┬──────────┘                                 │
+│                               │                                            │
+│           ┌───────────────────┴───────────────────┐                        │
+│           │                                       │                        │
+│  ┌────────▼─────────┐  ┌─────────────┐  ┌───────▼────────┐               │
+│  │  World-Tree      │  │   Lanthir   │  │  The Weave     │               │
+│  │  Grove           │  │   Grove     │  │  Grove         │               │
+│  │  (Filesystem)    │  │  (WM)       │  │  (Compositor)  │               │
+│  └────────┬─────────┘  └──────┬──────┘  └────────┬───────┘               │
+│           │                   │                   │                        │
+│           └───────────────────┴───────────────────┘                        │
+│                               │                                            │
+│                    ┌──────────▼──────────┐                                 │
+│                    │  Network Sprite     │                                 │
+│                    │  (Network Daemon)   │                                 │
+│                    └──────────┬──────────┘                                 │
+└───────────────────────────────┼───────────────────────────────────────────┘
+                                │
+════════════════════════════════╪════════════════════════════════════════════
+                                │  System Call Interface (via Nexus)
+════════════════════════════════╪════════════════════════════════════════════
+                                │
+┌───────────────────────────────▼───────────────────────────────────────────┐
+│                        KERNEL SPACE (The Heartwood)                        │
+│                                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                          The Nexus                                  │  │
+│  │              (Inter-Process Communication Core)                     │  │
+│  │                                                                     │  │
+│  │  • Asynchronous message passing                                    │  │
+│  │  • Capability-based channels                                       │  │
+│  │  • Priority-aware routing                                          │  │
+│  │  • Zero-copy where possible                                        │  │
+│  └─────────────────────┬───────────────────────┬───────────────────────┘  │
+│                        │                       │                          │
+│           ┌────────────▼────────────┐  ┌──────▼───────────────┐          │
+│           │   Loom of Fate          │  │   Mana Pool          │          │
+│           │   (Scheduler)           │  │   (Memory Manager)   │          │
+│           │                         │  │                      │          │
+│           │ • Harmony-based         │  │ • Capability-based   │          │
+│           │ • Cooperative           │  │ • Object-oriented    │          │
+│           │ • Parasite detection    │  │ • Purpose-driven     │          │
+│           │                         │  │                      │          │
+│           │ Thread States:          │  │ Regions:             │          │
+│           │  - Weaving              │  │  - Sanctuary         │          │
+│           │  - Resting              │  │  - Ephemeral Mist    │          │
+│           │  - Tangled              │  │                      │          │
+│           │  - Fading               │  │                      │          │
+│           └────────────┬────────────┘  └──────┬───────────────┘          │
+│                        │                      │                           │
+│                        └──────────┬───────────┘                           │
+│                                   │                                       │
+│                        ┌──────────▼──────────┐                            │
+│                        │  Attunement Layer   │                            │
+│                        │  (Hardware HAL)     │                            │
+│                        │                     │                            │
+│                        │  • CPU management   │                            │
+│                        │  • Interrupts       │                            │
+│                        │  • Timers           │                            │
+│                        └──────────┬──────────┘                            │
+└───────────────────────────────────┼───────────────────────────────────────┘
+                                    │
+════════════════════════════════════╪════════════════════════════════════════
+                                    │  Hardware Interface
+════════════════════════════════════╪════════════════════════════════════════
+                                    │
+┌───────────────────────────────────▼───────────────────────────────────────┐
+│                              HARDWARE                                      │
+│                                                                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │   CPU    │  │  Memory  │  │   Disk   │  │  Network │  │   GPU    │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+└────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                            KEY CONCEPTS
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  THE NEXUS - Communication Backbone                                          │
+│                                                                              │
+│  Process A                                       Process B                   │
+│      │                                               │                       │
+│      │ (ChannelCapability)                          │                       │
+│      ▼                                               ▼                       │
+│  ┌────────┐                                      ┌────────┐                 │
+│  │Channel │ ◄─────────── Nexus Core ──────────► │Channel │                 │
+│  └────────┘              (Router)                └────────┘                 │
+│      │                                               │                       │
+│      └──────────────► Message Queue ◄───────────────┘                       │
+│                      (Priority-ordered)                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  THE LOOM OF FATE - Harmony-Based Scheduling                                 │
+│                                                                              │
+│  Threads ──► Harmony Analyzer ──► Scheduler ──► CPU                         │
+│                    │                                                         │
+│                    └──► Scores (0.0 - 1.0)                                   │
+│                           │                                                  │
+│                           ├─► > 0.7: Harmonious                             │
+│                           ├─► 0.3 - 0.7: Normal                             │
+│                           └─► < 0.3: Parasitic (throttle)                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  THE MANA POOL - Capability-Based Memory                                     │
+│                                                                              │
+│  User Process                                                                │
+│      │                                                                       │
+│      │ (ObjectHandle - no raw pointers!)                                    │
+│      ▼                                                                       │
+│  Object Manager                                                              │
+│      │                                                                       │
+│      ├─► Sanctuary (long-lived, stable)                                     │
+│      └─► Ephemeral Mist (short-lived, volatile)                             │
+│                 │                                                            │
+│                 ▼                                                            │
+│          Physical Memory (protected by MMU)                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  WORLD-TREE FILESYSTEM - Query-Based                                         │
+│                                                                              │
+│  Traditional:    /home/user/docs/file.txt                                    │
+│                                                                              │
+│  AethelOS:       Seek {                                                      │
+│                    essence: "Scroll",                                        │
+│                    creator: "Elara",                                         │
+│                    name: "file"                                              │
+│                  }                                                           │
+│                                                                              │
+│  ┌──────────┐                                                                │
+│  │  Query   │ ──► Database Index ──► File Objects                           │
+│  └──────────┘                              │                                 │
+│                                             ├─► Metadata                     │
+│                                             ├─► Data                         │
+│                                             └─► Version History              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  THE WEAVE - Vector Graphics Compositor                                      │
+│                                                                              │
+│  Scene Graph ──► Transform ──► Rasterize ──► Shaders ──► Framebuffer       │
+│      │                                         (Glyphs)                      │
+│      │                                                                       │
+│      ├─► Window 1 (Bézier shape)                                            │
+│      │     ├─► Title Bar                                                    │
+│      │     └─► Content                                                      │
+│      │                                                                       │
+│      └─► Window 2 (Custom shape)                                            │
+│            └─► Widgets                                                      │
+│                                                                              │
+│  All rendering is vector-based (resolution-independent)                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                         DATA FLOW EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Example 1: Application Opens a File
+───────────────────────────────────
+
+Application
+    │
+    │ Query: Seek { essence: "Scroll", name: "config" }
+    ▼
+Ancient Runes (Corelib)
+    │
+    │ Message: FileQuery { ... }
+    ▼
+Nexus (IPC)
+    │
+    │ Route to World-Tree Grove
+    ▼
+World-Tree Grove
+    │
+    │ Database lookup
+    ▼
+    │ Request memory capability
+    ▼
+Nexus → Heartwood → Mana Pool
+    │
+    │ Grant ObjectHandle
+    ▼
+    │ Return FileObject with handle
+    ▼
+Application receives handle (not raw pointer!)
+
+
+Example 2: Window Drag Animation
+─────────────────────────────────
+
+User Input (Mouse Move)
+    │
+    ▼
+Lanthir Grove (Window Manager)
+    │
+    │ Update window position
+    │ Apply ripple transformation
+    ▼
+The Weave Grove (Compositor)
+    │
+    │ Modify scene graph node
+    │ Apply distortion glyph (shader)
+    ▼
+    │ Render to framebuffer
+    ▼
+GPU → Display
+
+
+Example 3: Parasite Detection
+──────────────────────────────
+
+Thread running
+    │
+    │ Resource usage monitored
+    ▼
+Loom of Fate (Scheduler)
+    │
+    │ Harmony Analyzer runs
+    ▼
+    │ Detect: harmony_score < 0.3
+    ▼
+    │ Throttle thread (reduce CPU allocation)
+    │ Send DisharmonyAlert message to parent
+    ▼
+Parent process
+    │
+    │ Receive alert, decide action
+    └──► Can request thread termination if needed
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        SECURITY MODEL
+═══════════════════════════════════════════════════════════════════════════════
+
+Capability Propagation
+──────────────────────
+
+Process A (has FileCapability)
+    │
+    │ Can create derived capability with FEWER rights
+    ▼
+Derived Capability (READ only)
+    │
+    │ Can transfer to Process B
+    ▼
+Process B (receives READ-only capability)
+    │
+    │ CANNOT escalate to WRITE
+    └──► Security enforced by kernel
+
+
+Isolation Boundaries
+────────────────────
+
+Hardware (Ring 0)
+    ▲
+    │ MMU enforces memory boundaries
+    │
+Heartwood (Ring 0)
+    ▲
+    │ Capability checks
+    │
+Groves (Ring 3)
+    ▲
+    │ Message passing via Nexus
+    │
+Applications (Ring 3)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    MEMORY LAYOUT (x86_64)
+═══════════════════════════════════════════════════════════════════════════════
+
+0xFFFF_FFFF_FFFF_FFFF ┬─────────────────────────────────
+                      │
+                      │  Kernel Stack
+                      │
+0xFFFF_A000_0000_0000 ├─────────────────────────────────
+                      │
+                      │  Device Memory (MMIO)
+                      │
+0xFFFF_9000_0000_0000 ├─────────────────────────────────
+                      │
+                      │  Kernel Heap (Mana Pool)
+                      │
+0xFFFF_8000_0000_0000 ├─────────────────────────────────
+                      │
+                      │  Kernel Code (.text, .data)
+                      │
+                      ╞═════════════════════════════════
+                      │  Non-canonical addresses
+                      ╞═════════════════════════════════
+                      │
+                      │  User Space Heap
+                      │
+0x0000_4000_0000_0000 ├─────────────────────────────────
+                      │
+                      │  User Space Stack
+                      │  (grows downward)
+                      │
+0x0000_0000_0040_0000 ├─────────────────────────────────
+                      │
+                      │  User Space Code
+                      │
+0x0000_0000_0000_1000 ├─────────────────────────────────
+                      │  Null page (unmapped)
+0x0000_0000_0000_0000 └─────────────────────────────────
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    BOOT SEQUENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. BIOS/UEFI
+      │
+      │ Load boot sector into 0x7c00
+      ▼
+2. boot.asm (First Spark)
+      │
+      │ Initialize hardware
+      │ Load second stage
+      ▼
+3. heartwood_loader (Second Stage)
+      │
+      │ Enable protected mode
+      │ Set up paging
+      │ Map kernel to higher half
+      │ Load kernel ELF
+      ▼
+4. Heartwood kernel (_start)
+      │
+      ├──► Initialize VGA buffer
+      ├──► Initialize Mana Pool
+      ├──► Initialize Nexus
+      ├──► Initialize Loom of Fate
+      ├──► Initialize Attunement Layer
+      │
+      ├──► Spawn World-Tree Grove
+      ├──► Spawn The Weave Grove
+      ├──► Spawn Lanthir Grove
+      └──► Spawn Network Sprite
+      │
+      ▼
+5. System Ready
+      │
+      │ The Heartwood lives!
+      └──► Eternal loop (hlt)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    FILE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+aethelos-source/
+│
+├── GENESIS.scroll          ← Philosophy and high-level design
+├── DESIGN.md               ← Technical deep dive
+├── ARCHITECTURE.txt        ← This file
+├── README.md               ← Project overview
+├── QUICKSTART.md           ← Getting started guide
+├── Makefile                ← Build system
+├── Cargo.toml              ← Rust workspace config
+│
+├── awakening/              ← Bootloader
+│   ├── boot.asm            ← 16-bit real mode boot sector
+│   └── heartwood_loader/   ← 32/64-bit loader
+│
+├── heartwood/              ← The Kernel
+│   ├── src/
+│   │   ├── main.rs         ← Kernel entry point
+│   │   ├── lib.rs          ← Kernel library exports
+│   │   ├── vga_buffer.rs   ← Early console output
+│   │   ├── nexus/          ← IPC system
+│   │   ├── loom_of_fate/   ← Scheduler
+│   │   ├── mana_pool/      ← Memory manager
+│   │   └── attunement/     ← Hardware abstraction
+│   └── Cargo.toml
+│
+├── groves/                 ← User-space services
+│   ├── world-tree_grove/   ← Filesystem
+│   ├── the-weave_grove/    ← Compositor
+│   ├── lanthir_grove/      ← Window manager
+│   └── network_sprite/     ← Network daemon
+│
+└── ancient-runes/          ← Core libraries
+    ├── corelib/            ← Standard library
+    ├── weaving/            ← GUI toolkit
+    └── script/             ← Shell API
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    END OF ARCHITECTURE DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+For more information:
+  • Read GENESIS.scroll for the philosophy
+  • Read DESIGN.md for technical details
+  • Read QUICKSTART.md to get started
+  • Read the source code - it's the ultimate documentation!
+
+"The code does not command the silicon. The silicon does not serve the code.
+ They dance together, and in that dance, life emerges."
