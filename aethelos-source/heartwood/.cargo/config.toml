@@ -1,0 +1,14 @@
+# [build]
+# Uncomment to build binary with custom target:
+# target = "x86_64-aethelos.json"
+
+[target.x86_64-aethelos]
+# Use LLD as the linker with our linker script
+rustflags = [
+    "-C", "link-arg=-no-pie",
+    "-C", "link-arg=-TF:/OS/aethelos-source/heartwood/linker.ld",
+]
+
+[unstable]
+build-std-features = ["compiler-builtins-mem"]
+build-std = ["core", "compiler_builtins", "alloc"]

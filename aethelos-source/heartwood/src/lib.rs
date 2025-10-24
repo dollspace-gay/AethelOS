@@ -28,6 +28,7 @@ unsafe impl GlobalAlloc for DummyAllocator {
 static GLOBAL_ALLOCATOR: DummyAllocator = DummyAllocator;
 
 // Re-export core modules
+pub mod boot;
 pub mod nexus;
 pub mod loom_of_fate;
 pub mod mana_pool;

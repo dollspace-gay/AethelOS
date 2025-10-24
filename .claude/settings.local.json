@@ -12,7 +12,20 @@
       "Bash(powershell -Command \"\n$content = Get-Content idt.rs -Raw\n# Replace asm! with naked_asm! inside naked functions, but keep regular asm! elsewhere\n$content = $content -replace ''(?s)(#\\[unsafe\\(naked\\)\\].*?extern \"\"C\"\" fn.*?\\{.*?unsafe \\{)\\s*asm!'', ''$1 core::arch::naked_asm!''\nSet-Content idt.rs $content\n\")",
       "Bash(powershell -Command \"(Get-Content idt_handlers.rs) -replace ''println!'', ''crate::println!'' | Set-Content idt_handlers.rs\")",
       "Bash(powershell -Command \"(Get-Content idt_handlers.rs) -replace ''\\!'', ''!'' | Set-Content idt_handlers.rs\")",
-      "Bash(powershell -Command \"$content = (Get-Content idt_handlers.rs -Raw); $content = $content -replace ''\\\\!'', ''!''; Set-Content idt_handlers.rs $content\")"
+      "Bash(powershell -Command \"$content = (Get-Content idt_handlers.rs -Raw); $content = $content -replace ''\\\\!'', ''!''; Set-Content idt_handlers.rs $content\")",
+      "Bash(readelf:*)",
+      "Bash(python3:*)",
+      "Bash(dd:*)",
+      "Bash(chmod:*)",
+      "Bash(./verify_multiboot.sh:*)",
+      "Bash(KERNEL=\"../target/x86_64-aethelos/debug/heartwood\")",
+      "Bash(if od -An -tx4 -N32768 \"$KERNEL\")",
+      "Bash(then echo \"✓ Multiboot2 magic (0xE85250D6) FOUND in binary!\")",
+      "Bash(else echo \"✗ Magic NOT found\")",
+      "Bash(fi)",
+      "Bash(KERNEL=\"target/x86_64-aethelos/debug/heartwood\":*)",
+      "Bash(then echo \"✓ Multiboot2 magic FOUND!\")",
+      "Bash(else echo \"✗ NOT found\")"
     ],
     "deny": [],
     "ask": []

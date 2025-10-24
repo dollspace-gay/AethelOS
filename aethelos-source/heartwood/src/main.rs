@@ -28,10 +28,23 @@ pub extern "C" fn _start() -> ! {
 
     vga_buffer::print_banner();
 
-    // The Eternal Loop - The Heartwood's consciousness
-    loop {
-        // x86_64::instructions::hlt(); // Requires nightly Rust
-        // For now, just spin
+    // Start the system threads and begin multitasking
+    println!();
+    match loom_of_fate::start_system_threads() {
+        Ok(()) => {
+            // Begin weaving - this will never return
+            loom_of_fate::begin_weaving();
+        }
+        Err(e) => {
+            println!("❌ Failed to start system threads: {:?}", e);
+            // Fall back to infinite loop
+            loop {
+                // Halt to save power
+                unsafe {
+                    core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                }
+            }
+        }
     }
 }
 

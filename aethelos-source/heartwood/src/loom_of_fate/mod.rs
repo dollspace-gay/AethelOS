@@ -18,6 +18,7 @@
 pub mod context;
 pub mod scheduler;
 pub mod stack;
+pub mod system_threads;
 pub mod thread;
 pub mod harmony;
 
@@ -55,6 +56,52 @@ pub fn current_thread() -> Option<ThreadId> {
 /// Get scheduler statistics
 pub fn stats() -> SchedulerStats {
     LOOM.lock().stats()
+}
+
+/// Start the system threads and begin multitasking
+///
+/// This function spawns the initial system threads and then yields,
+/// allowing the scheduler to begin running threads.
+///
+/// The spawned threads are:
+/// - Idle thread (Priority::Idle) - runs when nothing else can
+/// - Keyboard thread (Priority::High) - processes keyboard input
+/// - Shell thread (Priority::Normal) - interactive shell
+///
+/// # Note
+/// This function will return after spawning threads, allowing the
+/// caller to continue initialization or enter its own loop.
+pub fn start_system_threads() -> Result<(), LoomError> {
+    crate::println!("◈ Starting Loom of Fate threads...");
+
+    // Spawn the idle thread (lowest priority)
+    spawn(system_threads::idle_thread, ThreadPriority::Idle)?;
+
+    // Spawn the keyboard handler thread (high priority - user input is important)
+    spawn(system_threads::keyboard_thread, ThreadPriority::High)?;
+
+    // Spawn the shell thread (normal priority)
+    spawn(system_threads::shell_thread, ThreadPriority::Normal)?;
+
+    crate::println!("◈ System threads ready. Harmony: {:.2}", stats().system_harmony);
+    crate::println!();
+
+    Ok(())
+}
+
+/// Begin multitasking by yielding to the scheduler
+///
+/// This is typically called after start_system_threads() to actually
+/// start executing threads.
+pub fn begin_weaving() -> ! {
+    crate::println!("◈ The Loom begins to weave...");
+    crate::println!();
+
+    // Yield to start the first thread
+    // This will never return as we'll be context-switched away
+    loop {
+        yield_now();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
