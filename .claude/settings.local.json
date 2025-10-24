@@ -7,7 +7,12 @@
       "Bash(cargo tree:*)",
       "Bash(grep:*)",
       "Bash(1)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(powershell -Command \"(Get-Content heartwood/src/attunement/idt.rs) -replace ''unsafe extern \"\"C\"\" fn'', ''extern \"\"C\"\" fn'' | Set-Content heartwood/src/attunement/idt.rs\")",
+      "Bash(powershell -Command \"\n$content = Get-Content idt.rs -Raw\n# Replace asm! with naked_asm! inside naked functions, but keep regular asm! elsewhere\n$content = $content -replace ''(?s)(#\\[unsafe\\(naked\\)\\].*?extern \"\"C\"\" fn.*?\\{.*?unsafe \\{)\\s*asm!'', ''$1 core::arch::naked_asm!''\nSet-Content idt.rs $content\n\")",
+      "Bash(powershell -Command \"(Get-Content idt_handlers.rs) -replace ''println!'', ''crate::println!'' | Set-Content idt_handlers.rs\")",
+      "Bash(powershell -Command \"(Get-Content idt_handlers.rs) -replace ''\\!'', ''!'' | Set-Content idt_handlers.rs\")",
+      "Bash(powershell -Command \"$content = (Get-Content idt_handlers.rs -Raw); $content = $content -replace ''\\\\!'', ''!''; Set-Content idt_handlers.rs $content\")"
     ],
     "deny": [],
     "ask": []
