@@ -1,5 +1,7 @@
 //! Thread definitions - The Threads of Fate
 
+use super::context::ThreadContext;
+
 /// A unique identifier for a thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ThreadId(pub u64);
@@ -37,6 +39,11 @@ pub struct Thread {
     pub(crate) priority: ThreadPriority,
     pub(crate) entry_point: fn() -> !,
 
+    // CPU state (for context switching)
+    pub(crate) context: ThreadContext,
+    pub(crate) stack_bottom: u64,
+    pub(crate) stack_top: u64,
+
     // Harmony tracking
     pub(crate) resource_usage: ResourceUsage,
     pub(crate) harmony_score: f32,
@@ -44,20 +51,52 @@ pub struct Thread {
     // Execution context
     pub(crate) time_slices_used: u64,
     pub(crate) yields: u64,
+    pub(crate) last_run_time: u64,
 }
 
 impl Thread {
-    pub fn new(id: ThreadId, entry_point: fn() -> !, priority: ThreadPriority) -> Self {
+    /// Create a new thread with allocated stack
+    ///
+    /// # Arguments
+    /// * `id` - Unique thread identifier
+    /// * `entry_point` - Function where thread begins execution
+    /// * `priority` - Thread priority level
+    /// * `stack_bottom` - Low address of thread's stack
+    /// * `stack_top` - High address of thread's stack
+    pub fn new(
+        id: ThreadId,
+        entry_point: fn() -> !,
+        priority: ThreadPriority,
+        stack_bottom: u64,
+        stack_top: u64,
+    ) -> Self {
+        // Create initial context for this thread
+        let context = ThreadContext::new(entry_point as u64, stack_top);
+
         Self {
             id,
             state: ThreadState::Resting,
             priority,
             entry_point,
+            context,
+            stack_bottom,
+            stack_top,
             resource_usage: ResourceUsage::default(),
             harmony_score: 1.0, // Start in perfect harmony
             time_slices_used: 0,
             yields: 0,
+            last_run_time: 0,
         }
+    }
+
+    /// Get a mutable reference to the thread's context
+    pub fn context_mut(&mut self) -> &mut ThreadContext {
+        &mut self.context
+    }
+
+    /// Get a reference to the thread's context
+    pub fn context(&self) -> &ThreadContext {
+        &self.context
     }
 
     pub fn id(&self) -> ThreadId {

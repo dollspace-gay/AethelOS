@@ -1,6 +1,8 @@
 //! The Scheduler - The core of the Loom of Fate
 
+use super::context::{switch_context, ThreadContext};
 use super::harmony::{HarmonyAnalyzer, HarmonyMetrics};
+use super::stack::Stack;
 use super::thread::{Thread, ThreadId, ThreadPriority, ThreadState};
 use super::LoomError;
 use alloc::collections::VecDeque;
@@ -11,12 +13,15 @@ const MAX_THREADS: usize = 1024;
 /// The harmony-based cooperative scheduler
 pub struct Scheduler {
     threads: Vec<Thread>,
+    stacks: Vec<Stack>,  // Stack storage (owned by scheduler)
     ready_queue: VecDeque<ThreadId>,
     current_thread: Option<ThreadId>,
     next_thread_id: u64,
     harmony_analyzer: HarmonyAnalyzer,
     /// Latest harmony metrics from the analyzer
     latest_metrics: HarmonyMetrics,
+    /// Total number of context switches performed
+    context_switches: u64,
 }
 
 impl Default for Scheduler {
@@ -29,11 +34,13 @@ impl Scheduler {
     pub fn new() -> Self {
         Self {
             threads: Vec::new(),
+            stacks: Vec::new(),
             ready_queue: VecDeque::new(),
             current_thread: None,
             next_thread_id: 1,
             harmony_analyzer: HarmonyAnalyzer::new(),
             latest_metrics: HarmonyMetrics::default(),
+            context_switches: 0,
         }
     }
 
@@ -46,30 +53,32 @@ impl Scheduler {
         let thread_id = ThreadId(self.next_thread_id);
         self.next_thread_id += 1;
 
-        let thread = Thread::new(thread_id, entry_point, priority);
+        // Allocate a stack for this thread
+        let stack = Stack::new().ok_or(LoomError::StackAllocationFailed)?;
+        let stack_bottom = stack.bottom();
+        let stack_top = stack.top();
+
+        // Create the thread with its stack
+        let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top);
+
         self.threads.push(thread);
+        self.stacks.push(stack);  // Keep stack alive
         self.ready_queue.push_back(thread_id);
 
         Ok(thread_id)
     }
 
-    /// Yield the current thread
+    /// Yield the current thread and switch to the next one
+    ///
+    /// This is the heart of cooperative multitasking. The current thread
+    /// voluntarily gives up the CPU, and we select the next thread based
+    /// on harmony and priority.
+    ///
+    /// # Safety
+    /// This function performs context switching which involves raw register
+    /// manipulation. It should only be called from safe contexts where
+    /// the scheduler state is valid.
     pub fn yield_current(&mut self) {
-        if let Some(current_id) = self.current_thread {
-            if let Some(thread) = self.find_thread_mut(current_id) {
-                thread.record_yield();
-                thread.set_state(ThreadState::Resting);
-            }
-
-            self.ready_queue.push_back(current_id);
-            self.current_thread = None;
-        }
-
-        self.schedule_next();
-    }
-
-    /// Schedule the next thread to run
-    fn schedule_next(&mut self) {
         // Analyze harmony before scheduling
         let metrics = self.harmony_analyzer.analyze(&mut self.threads);
         self.latest_metrics = metrics;
@@ -77,44 +86,107 @@ impl Scheduler {
         // Adaptive scheduling based on system harmony
         if metrics.system_harmony < 0.5 {
             // System is in disharmony - prioritize cooperative threads
-            // and deprioritize parasites more aggressively
             self.rebalance_for_harmony();
         }
 
-        // Find the next thread to run based on harmony
+        // Find the next thread to run
         let next_thread_id = self.select_next_thread();
 
-        if let Some(thread_id) = next_thread_id {
-            // Check if thread is parasitic and get soothe factor before mutable borrow
-            let (is_parasitic, soothe_factor) = self.find_thread(thread_id)
-                .map(|t| {
-                    let parasitic = self.harmony_analyzer.should_soothe(t);
-                    let factor = if parasitic {
-                        self.harmony_analyzer.soothe_factor(t)
-                    } else {
-                        1.0
-                    };
-                    (parasitic, factor)
-                })
-                .unwrap_or((false, 1.0));
+        if next_thread_id.is_none() {
+            // No threads ready - this shouldn't happen in a well-designed system
+            // but if it does, we just return (stay on current thread if any)
+            return;
+        }
 
-            if let Some(thread) = self.find_thread_mut(thread_id) {
-                thread.set_state(ThreadState::Weaving);
-                thread.record_time_slice();
+        let next_id = next_thread_id.unwrap();
 
-                // If this thread is parasitic, soothe it based on harmony score
-                if is_parasitic {
-                    // In a real implementation, we would:
-                    // 1. Reduce time slice based on soothe_factor (lower = more throttling)
-                    // 2. Insert deliberate pauses/delays
-                    // 3. Lower its effective priority
-                    // For now, this documents the intent for future implementation
-                    let _ = soothe_factor; // Acknowledge we have the factor
-                }
+        // If we're switching to a different thread, perform context switch
+        if self.current_thread.is_some() && self.current_thread != Some(next_id) {
+            let current_id = self.current_thread.unwrap();
+
+            // Update current thread state
+            if let Some(current_thread) = self.find_thread_mut(current_id) {
+                current_thread.record_yield();
+                current_thread.set_state(ThreadState::Resting);
             }
 
-            self.current_thread = Some(thread_id);
+            // Add current thread back to ready queue
+            self.ready_queue.push_back(current_id);
+
+            // Update next thread state
+            if let Some(next_thread) = self.find_thread_mut(next_id) {
+                next_thread.set_state(ThreadState::Weaving);
+                next_thread.record_time_slice();
+                next_thread.last_run_time = crate::attunement::timer::ticks();
+            }
+
+            // Perform the actual context switch
+            self.context_switches += 1;
+            self.perform_context_switch(current_id, next_id);
+
+            // After we return from context switch, we're running as the "next" thread
+            // (which may actually be this thread again after future switches)
+        } else if self.current_thread.is_none() {
+            // First thread to run - just start it (no context to save)
+            if let Some(next_thread) = self.find_thread_mut(next_id) {
+                next_thread.set_state(ThreadState::Weaving);
+                next_thread.record_time_slice();
+                next_thread.last_run_time = crate::attunement::timer::ticks();
+            }
+
+            self.current_thread = Some(next_id);
+            // Jump to the first thread (this will not return)
+            self.jump_to_thread(next_id);
         }
+
+        // Update current thread ID
+        self.current_thread = Some(next_id);
+    }
+
+    /// Perform a context switch between two threads
+    ///
+    /// # Safety
+    /// Assumes both thread IDs are valid and the threads exist
+    fn perform_context_switch(&mut self, from_id: ThreadId, to_id: ThreadId) {
+        // Get raw pointers to the contexts before borrowing
+        let from_idx = self.threads.iter().position(|t| t.id() == from_id).unwrap();
+        let to_idx = self.threads.iter().position(|t| t.id() == to_id).unwrap();
+
+        let from_ctx_ptr = &mut self.threads[from_idx].context as *mut ThreadContext;
+        let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
+
+        // Perform the context switch
+        // This will save the current state to from_ctx and restore to_ctx
+        unsafe {
+            switch_context(from_ctx_ptr, to_ctx_ptr);
+        }
+
+        // When we return here, we're running as the "to" thread
+        // (or possibly some other thread that later switched back to us)
+    }
+
+    /// Jump to a thread for the first time (no context to save)
+    ///
+    /// # Safety
+    /// This function never returns - it jumps to the thread's entry point
+    fn jump_to_thread(&mut self, to_id: ThreadId) -> ! {
+        // Find the thread's context
+        let to_idx = self.threads.iter().position(|t| t.id() == to_id).unwrap();
+        let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
+
+        // Create a dummy context for the "from" side (we won't use it)
+        let mut dummy_ctx = ThreadContext::empty();
+        let dummy_ctx_ptr = &mut dummy_ctx as *mut ThreadContext;
+
+        // Jump to the new thread
+        // Note: switch_context will try to save our state to dummy_ctx,
+        // but since we're never coming back, that's fine
+        unsafe {
+            switch_context(dummy_ctx_ptr, to_ctx_ptr);
+        }
+
+        // Never reached
+        unreachable!("jump_to_thread should never return");
     }
 
     /// Rebalance the ready queue when system harmony is low
@@ -210,6 +282,7 @@ impl Scheduler {
             average_harmony: self.latest_metrics.average_harmony,
             system_harmony: self.latest_metrics.system_harmony,
             parasite_count: self.latest_metrics.parasite_count,
+            context_switches: self.context_switches,
         }
     }
 
@@ -229,4 +302,5 @@ pub struct SchedulerStats {
     pub average_harmony: f32,
     pub system_harmony: f32,
     pub parasite_count: usize,
+    pub context_switches: u64,
 }

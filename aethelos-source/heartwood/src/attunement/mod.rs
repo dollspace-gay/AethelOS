@@ -11,6 +11,7 @@
 
 pub mod gdt;
 pub mod idt;
+pub mod keyboard;
 pub mod pic;
 pub mod pit;
 
@@ -72,6 +73,10 @@ pub fn init() {
     // Initialize system timer (PIT)
     crate::println!("    ∴ Starting system heartbeat (PIT @ {} Hz)...", PIT.frequency());
     timer::init();
+
+    // Initialize keyboard
+    crate::println!("    ∴ Listening for keystrokes (PS/2)...");
+    keyboard::init();
 
     crate::println!("  ◈ Hardware attunement complete");
 }

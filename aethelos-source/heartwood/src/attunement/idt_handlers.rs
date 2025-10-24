@@ -247,13 +247,8 @@ pub extern "C" fn keyboard_handler() {
 }
 
 extern "C" fn keyboard_inner() {
-    // Will be connected to keyboard driver
-    // For now, just read and discard the scancode
-    unsafe {
-        let scancode: u8;
-        asm!("in al, 0x60", out("al") scancode, options(nostack, preserves_flags));
-        // TODO: Send to keyboard driver via Nexus
-    }
+    // Handle keyboard interrupt via the keyboard driver
+    crate::attunement::keyboard::on_interrupt();
 }
 
 // Stub handlers for other hardware interrupts

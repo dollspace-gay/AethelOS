@@ -15,7 +15,9 @@
 //! - Resource negotiation based on system-wide harmony
 //! - Parasite detection and throttling (not killing)
 
+pub mod context;
 pub mod scheduler;
+pub mod stack;
 pub mod thread;
 pub mod harmony;
 
@@ -60,4 +62,5 @@ pub enum LoomError {
     OutOfThreads,
     ThreadNotFound,
     InvalidPriority,
+    StackAllocationFailed,
 }
