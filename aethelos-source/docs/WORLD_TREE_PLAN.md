@@ -737,6 +737,707 @@ impl RamDisk {
 
 ---
 
+## Pruning & Space Management: "Dead Wood Removal"
+
+### Philosophy
+
+> *"Even the oldest tree must shed its dead wood.
+> We honor the past, but we do not let it strangle the present.
+> The World-Tree remembers, but it also forgets - wisely, gently, deliberately."*
+
+**The Challenge:**
+Git-like versioning creates a fundamental tension:
+- **Users want:** Complete history, instant rollback, data safety
+- **Reality demands:** Finite storage, reasonable performance, manageable complexity
+
+**The Solution:**
+The World-Tree is an **archival system**, not a hard drive eater. It balances preservation with pragmatism through intelligent pruning.
+
+### Core Principles
+
+1. **Current versions are sacred** - HEAD commit is never pruned
+2. **Recent history is valuable** - Last N days kept in full
+3. **Ancient history is compressed** - Old versions use delta storage
+4. **User has final say** - Manual anchors preserve critical versions
+5. **Pruning is explicit** - Never auto-delete without user awareness
+
+---
+
+### Retention Policies
+
+```rust
+pub struct RetentionPolicy {
+    /// Keep all versions from last N days (full objects)
+    keep_recent_days: u32,
+
+    /// Keep weekly snapshots for N months
+    keep_weekly_months: u32,
+
+    /// Keep monthly snapshots for N years
+    keep_monthly_years: u32,
+
+    /// Keep user-anchored versions forever
+    keep_anchors_forever: bool,
+
+    /// Use delta compression for old versions
+    use_delta_compression: bool,
+}
+
+// Default: Balanced retention (recommended)
+pub const DEFAULT_RETENTION: RetentionPolicy = RetentionPolicy {
+    keep_recent_days: 30,        // Full history for 1 month
+    keep_weekly_months: 6,       // Weekly snapshots for 6 months
+    keep_monthly_years: 2,       // Monthly snapshots for 2 years
+    keep_anchors_forever: true,
+    use_delta_compression: true,
+};
+
+// Archival: Maximum preservation
+pub const ARCHIVAL_RETENTION: RetentionPolicy = RetentionPolicy {
+    keep_recent_days: 365,       // 1 year full history
+    keep_weekly_months: 24,      // 2 years of weekly snapshots
+    keep_monthly_years: 10,      // 10 years of monthly snapshots
+    keep_anchors_forever: true,
+    use_delta_compression: true,
+};
+
+// Minimal: Low storage environments
+pub const MINIMAL_RETENTION: RetentionPolicy = RetentionPolicy {
+    keep_recent_days: 7,         // 1 week full history
+    keep_weekly_months: 1,       // 4 weekly snapshots
+    keep_monthly_years: 0,       // No long-term monthly snapshots
+    keep_anchors_forever: true,
+    use_delta_compression: true,
+};
+```
+
+**Timeline Example (Default Policy):**
+
+```
+Today ─────────────────────────────────────────────────────────────► Past
+
+├─ 0-30 days ─┤─ 1-6 months ─┤─ 6mo-2yr ─┤─ 2+ years ─┤
+   EVERY         WEEKLY         MONTHLY      ANCHORS
+   VERSION       SNAPSHOTS      SNAPSHOTS    ONLY
+
+Storage:      High            Medium         Low          Minimal
+Granularity:  Maximum         Weekly         Monthly      Critical only
+```
+
+---
+
+### Pruning Strategies
+
+#### Strategy 1: Reference-Counted Garbage Collection
+
+Like `git gc`, removes unreachable objects:
+
+```rust
+pub struct Pruner {
+    policy: RetentionPolicy,
+    world_tree: Arc<Mutex<WorldTree>>,
+}
+
+impl Pruner {
+    /// Mark-and-sweep garbage collection
+    pub fn prune_unreachable(&mut self) -> PruneStats {
+        // Phase 1: Mark all reachable objects
+        let mut reachable = HashSet::new();
+        self.mark_reachable(self.world_tree.head, &mut reachable);
+
+        // Phase 2: Sweep unreachable objects
+        let mut pruned_objects = 0;
+        let mut space_reclaimed = 0;
+
+        self.world_tree.objects.retain(|hash, content| {
+            if reachable.contains(hash) {
+                true
+            } else {
+                pruned_objects += 1;
+                space_reclaimed += content.len();
+                false
+            }
+        });
+
+        PruneStats {
+            objects_removed: pruned_objects,
+            commits_removed: 0,
+            space_reclaimed,
+        }
+    }
+
+    fn mark_reachable(&self, commit_id: Option<CommitId>, reachable: &mut HashSet<SHA256Hash>) {
+        let mut current = commit_id;
+
+        while let Some(id) = current {
+            let commit = &self.world_tree.commits[id];
+
+            // Mark all objects referenced by this commit
+            for change in &commit.changes {
+                match change {
+                    Change::Create { content_hash, .. } => {
+                        reachable.insert(*content_hash);
+                    }
+                    Change::Modify { new_hash, .. } => {
+                        reachable.insert(*new_hash);
+                    }
+                    _ => {}
+                }
+            }
+
+            current = commit.parent;
+        }
+    }
+}
+```
+
+#### Strategy 2: Time-Based Commit Thinning
+
+Removes non-snapshot commits based on retention policy:
+
+```rust
+impl Pruner {
+    /// Prune commits according to retention policy
+    pub fn prune_by_policy(&mut self) -> PruneStats {
+        let now = now();
+        let mut commits_to_remove = Vec::new();
+
+        for commit in &self.world_tree.commits {
+            // Never prune HEAD
+            if Some(commit.id) == self.world_tree.head {
+                continue;
+            }
+
+            // Check if any files in this commit are anchored
+            if self.has_anchored_files(commit) {
+                continue;
+            }
+
+            let age_days = (now - commit.timestamp).days();
+
+            // Keep recent commits (last N days)
+            if age_days < self.policy.keep_recent_days {
+                continue;
+            }
+
+            // Keep weekly snapshots (first commit of each week)
+            if age_days < self.policy.keep_weekly_months * 30 {
+                if commit.timestamp.is_start_of_week() {
+                    continue;
+                }
+            }
+
+            // Keep monthly snapshots (first commit of each month)
+            else if age_days < self.policy.keep_monthly_years * 365 {
+                if commit.timestamp.is_start_of_month() {
+                    continue;
+                }
+            }
+
+            // This commit can be pruned
+            commits_to_remove.push(commit.id);
+        }
+
+        // Remove commits and run GC to clean up orphaned objects
+        self.remove_commits(&commits_to_remove);
+        self.prune_unreachable()
+    }
+
+    fn has_anchored_files(&self, commit: &Commit) -> bool {
+        for change in &commit.changes {
+            let file_id = match change {
+                Change::Create { file, .. } => *file,
+                Change::Modify { file, .. } => *file,
+                Change::Delete { file } => *file,
+            };
+
+            if let Some(metadata) = self.world_tree.metadata.get(&file_id) {
+                if metadata.anchored {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+```
+
+#### Strategy 3: Delta Compression
+
+Store old versions as diffs instead of full copies:
+
+```rust
+pub enum ObjectStorage {
+    /// Full object (recent versions)
+    Full(Arc<Vec<u8>>),
+
+    /// Delta from base object (old versions)
+    Delta {
+        base_hash: SHA256Hash,
+        diff: Vec<u8>,  // xdelta3 or similar
+    },
+}
+
+impl WorldTree {
+    /// Convert full object to delta compression
+    pub fn compress_old_versions(&mut self) -> CompressionStats {
+        let cutoff = now() - Duration::days(self.policy.keep_recent_days);
+        let mut compressed = 0;
+        let mut space_saved = 0;
+
+        for commit in &self.commits {
+            if commit.timestamp > cutoff {
+                continue;  // Keep recent versions as full objects
+            }
+
+            for change in &commit.changes {
+                if let Change::Modify { old_hash, new_hash, .. } = change {
+                    // Convert new_hash to delta from old_hash
+                    if let Some(space) = self.convert_to_delta(*old_hash, *new_hash) {
+                        compressed += 1;
+                        space_saved += space;
+                    }
+                }
+            }
+        }
+
+        CompressionStats { compressed, space_saved }
+    }
+
+    fn convert_to_delta(&mut self, base: SHA256Hash, target: SHA256Hash) -> Option<usize> {
+        let base_content = self.objects.get(&base)?;
+        let target_content = self.objects.get(&target)?;
+
+        // Already a delta
+        if matches!(target_content, ObjectStorage::Delta { .. }) {
+            return None;
+        }
+
+        // Compute diff
+        let diff = compute_diff(base_content, target_content);
+        let original_size = target_content.len();
+        let delta_size = diff.len();
+
+        // Only compress if we save significant space (>20%)
+        if delta_size < original_size * 80 / 100 {
+            self.objects.insert(target, ObjectStorage::Delta {
+                base_hash: base,
+                diff,
+            });
+            Some(original_size - delta_size)
+        } else {
+            None
+        }
+    }
+}
+```
+
+#### Strategy 4: User-Controlled Anchors
+
+Let users preserve critical versions forever:
+
+```rust
+pub struct Metadata {
+    // ... existing fields ...
+
+    /// If true, this version will NEVER be pruned
+    pub anchored: bool,
+
+    /// Optional reason for anchoring
+    pub anchor_reason: Option<String>,
+
+    /// Who anchored this version
+    pub anchored_by: Option<UserId>,
+
+    /// When it was anchored
+    pub anchored_at: Option<Timestamp>,
+}
+
+impl WorldTree {
+    /// Anchor a specific file version to prevent pruning
+    pub fn anchor_version(
+        &mut self,
+        file: FileId,
+        reason: &str,
+        capability: &Capability
+    ) -> Result<()> {
+        verify_capability(capability, file, Rights::WRITE)?;
+
+        if let Some(metadata) = self.metadata.get_mut(&file) {
+            metadata.anchored = true;
+            metadata.anchor_reason = Some(reason.to_string());
+            metadata.anchored_by = Some(current_user());
+            metadata.anchored_at = Some(now());
+        }
+
+        Ok(())
+    }
+
+    /// Remove anchor (allow pruning)
+    pub fn unanchor_version(
+        &mut self,
+        file: FileId,
+        capability: &Capability
+    ) -> Result<()> {
+        verify_capability(capability, file, Rights::WRITE)?;
+
+        if let Some(metadata) = self.metadata.get_mut(&file) {
+            metadata.anchored = false;
+            metadata.anchor_reason = None;
+        }
+
+        Ok(())
+    }
+
+    /// List all anchored versions
+    pub fn list_anchors(&self) -> Vec<AnchorInfo> {
+        self.metadata.values()
+            .filter(|m| m.anchored)
+            .map(|m| AnchorInfo {
+                file_id: m.id,
+                name: m.name.clone(),
+                reason: m.anchor_reason.clone(),
+                anchored_by: m.anchored_by,
+                anchored_at: m.anchored_at,
+            })
+            .collect()
+    }
+}
+```
+
+---
+
+### Shell Commands
+
+```bash
+# View pruning statistics
+eldarin> prune-stats
+◈ Dead Wood Analysis
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Total commits:        3,842
+  Reachable commits:    1,245 (32.4%)
+  Prunable commits:     2,597 (67.6%)
+
+  Total objects:        45,823
+  Reachable objects:    12,441 (27.1%)
+  Unreachable objects:  33,382 (72.9%)
+
+  Storage usage:        8.7 GB
+  Reclaimable space:    4.2 GB (48.3%)
+
+# Dry-run prune (preview what would be deleted)
+eldarin> prune --dry-run
+◈ Pruning Simulation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Would remove:
+  • 2,597 commits (older than retention policy)
+  • 33,382 objects (unreachable)
+
+Retention breakdown:
+  • Last 30 days:        1,245 commits (kept)
+  • Weekly snapshots:    124 commits (kept)
+  • Monthly snapshots:   24 commits (kept)
+  • Anchored versions:   15 commits (kept)
+  • Prunable:            2,597 commits (removed)
+
+Space to reclaim: 4.2 GB
+
+# Execute pruning
+eldarin> prune --confirm
+◈ Pruning dead wood...
+  Removing old commits... 2,597 removed
+  Garbage collecting... 33,382 objects freed
+  Reclaimed 4.2 GB in 2.3s
+✓ Pruning complete
+
+# Anchor a version (preserve forever)
+eldarin> anchor <file-id> "Production release v1.0.0"
+✓ Version anchored: config.toml @ commit abc123
+
+# List anchored versions
+eldarin> list-anchors
+◈ Anchored Versions
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  config.toml @ abc123
+    "Working production config"
+    Anchored by: root on 2025-01-15
+
+  kernel.bin @ def456
+    "v1.0 release - stable"
+    Anchored by: root on 2025-01-01
+
+  database.db @ 789abc
+    "Pre-migration snapshot"
+    Anchored by: admin on 2024-12-20
+
+# Remove anchor (allow pruning)
+eldarin> unanchor <file-id>
+✓ Anchor removed from config.toml
+
+# Configure retention policy
+eldarin> retention-policy --set archival
+✓ Retention policy set to 'archival'
+  Keep recent: 365 days
+  Weekly snapshots: 24 months
+  Monthly snapshots: 10 years
+
+eldarin> retention-policy --show
+Current policy: default
+  • Last 30 days: Full history
+  • 1-6 months: Weekly snapshots
+  • 6mo-2yr: Monthly snapshots
+  • 2+ years: Anchored versions only
+  • Delta compression: Enabled
+```
+
+---
+
+### Safety Mechanisms
+
+#### 1. Two-Phase Pruning
+
+Never delete immediately - give user a chance to review:
+
+```rust
+pub struct PruneOperation {
+    id: OperationId,
+    created_at: Timestamp,
+    commits_marked: Vec<CommitId>,
+    objects_marked: Vec<SHA256Hash>,
+    estimated_space: usize,
+    executed: bool,
+}
+
+impl Pruner {
+    /// Phase 1: Mark objects for deletion (reversible)
+    pub fn mark_for_pruning(&mut self) -> OperationId {
+        let op = self.prune_by_policy();
+
+        // Don't actually delete yet, just record what would be deleted
+        let operation = PruneOperation {
+            id: OperationId::new(),
+            created_at: now(),
+            commits_marked: op.commits_to_remove,
+            objects_marked: op.objects_to_remove,
+            estimated_space: op.space_reclaimed,
+            executed: false,
+        };
+
+        self.pending_operations.push(operation.clone());
+        operation.id
+    }
+
+    /// Phase 2: Execute marked pruning (irreversible)
+    pub fn execute_pruning(&mut self, op_id: OperationId) -> Result<PruneStats> {
+        let op = self.pending_operations.iter_mut()
+            .find(|o| o.id == op_id)
+            .ok_or("Operation not found")?;
+
+        if op.executed {
+            return Err("Already executed");
+        }
+
+        // Actually delete
+        let stats = self.do_prune(&op.commits_marked, &op.objects_marked);
+        op.executed = true;
+
+        Ok(stats)
+    }
+}
+```
+
+#### 2. Prune Audit Log
+
+Record every pruning operation for accountability:
+
+```rust
+pub struct PruneLog {
+    timestamp: Timestamp,
+    user: UserId,
+    policy_used: RetentionPolicy,
+    commits_removed: usize,
+    objects_removed: usize,
+    space_reclaimed: usize,
+    duration: Duration,
+}
+
+// View history
+eldarin> prune-history
+◈ Pruning History
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2025-01-20 14:32 by root
+    Policy: default
+    Removed: 2,597 commits, 33,382 objects
+    Reclaimed: 4.2 GB
+    Duration: 2.3s
+
+  2025-01-15 09:15 by root
+    Policy: default
+    Removed: 1,234 commits, 15,678 objects
+    Reclaimed: 1.8 GB
+    Duration: 1.1s
+```
+
+#### 3. Pre-Prune Validation
+
+Ensure pruning won't break anything:
+
+```rust
+impl Pruner {
+    /// Validate pruning operation before execution
+    pub fn validate_prune(&self, op: &PruneOperation) -> Result<ValidationReport> {
+        let mut warnings = Vec::new();
+        let mut errors = Vec::new();
+
+        // Check 1: Never prune HEAD
+        if op.commits_marked.contains(&self.world_tree.head.unwrap()) {
+            errors.push("Cannot prune HEAD commit");
+        }
+
+        // Check 2: Warn about anchored versions
+        let anchored_count = self.count_anchored_in_commits(&op.commits_marked);
+        if anchored_count > 0 {
+            warnings.push(format!("{} anchored versions will be preserved", anchored_count));
+        }
+
+        // Check 3: Ensure no broken references
+        for commit_id in &op.commits_marked {
+            if self.is_referenced_by_kept_commit(commit_id) {
+                errors.push(format!("Commit {} is still referenced", commit_id));
+            }
+        }
+
+        if !errors.is_empty() {
+            Err("Validation failed")
+        } else {
+            Ok(ValidationReport { warnings, errors })
+        }
+    }
+}
+```
+
+---
+
+### Performance Considerations
+
+**Pruning can be expensive:**
+- Walking entire commit graph: O(N commits)
+- Mark-and-sweep GC: O(N objects)
+- Delta compression: O(N × M file size)
+
+**Optimizations:**
+
+```rust
+// 1. Incremental pruning (don't do everything at once)
+impl Pruner {
+    pub fn prune_incremental(&mut self, max_duration: Duration) {
+        let start = now();
+
+        while now() - start < max_duration {
+            if let Some(commit) = self.get_next_prunable_commit() {
+                self.prune_commit(commit);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+// 2. Background pruning (low-priority thread)
+pub fn spawn_pruner_daemon() {
+    Loom.spawn(Priority::Idle, || {
+        loop {
+            sleep(Duration::hours(24));  // Daily pruning
+
+            if disk_usage() > 80% {
+                let pruner = get_pruner();
+                pruner.prune_by_policy();
+            }
+        }
+    });
+}
+
+// 3. Lazy delta compression (compress on-demand)
+impl WorldTree {
+    pub fn read(&self, file: FileId, cap: &Capability) -> Result<Arc<Vec<u8>>> {
+        let metadata = self.metadata.get(&file)?;
+
+        match self.objects.get(&metadata.content_hash)? {
+            ObjectStorage::Full(content) => Ok(content.clone()),
+
+            ObjectStorage::Delta { base_hash, diff } => {
+                // Reconstruct from delta
+                let base = self.read_by_hash(base_hash)?;
+                let reconstructed = apply_diff(&base, diff);
+                Ok(Arc::new(reconstructed))
+            }
+        }
+    }
+}
+```
+
+---
+
+### Integration with Implementation Phases
+
+**Phase 1-3:** Core filesystem without pruning
+**Phase 4:** Add versioning infrastructure
+**Phase 5:** Add capabilities
+**Phase 6:** Integration
+**Phase 7 (NEW): Pruning & Space Management**
+
+#### Phase 7: Pruning (Week 4)
+**Goal:** Prevent unbounded storage growth
+
+**Tasks:**
+- [ ] Implement `RetentionPolicy` configuration
+- [ ] Implement mark-and-sweep GC
+- [ ] Implement time-based commit thinning
+- [ ] Add user anchor system
+- [ ] Create `prune-stats`, `prune`, `anchor` commands
+- [ ] Add prune audit logging
+- [ ] Implement validation checks
+- [ ] Write tests for edge cases (anchored versions, HEAD protection)
+
+**Optional (Phase 8):**
+- [ ] Delta compression for old versions
+- [ ] Background pruner daemon
+- [ ] Per-file retention policies
+- [ ] Compression algorithm optimization
+
+**Deliverable:** Can prune old versions safely while preserving critical history
+
+---
+
+### Example: Space Usage Over Time
+
+**Without Pruning:**
+```
+Month 1: 100 MB
+Month 2: 500 MB
+Month 3: 1.2 GB
+Month 6: 4.8 GB
+Year 1:  12.3 GB  ⚠️ Unsustainable!
+```
+
+**With Default Retention Policy:**
+```
+Month 1: 100 MB
+Month 2: 250 MB (weekly snapshots started)
+Month 3: 400 MB (monthly snapshots started)
+Month 6: 800 MB (old daily versions pruned)
+Year 1:  1.2 GB ✓ Stable growth
+Year 2:  1.5 GB ✓ Manageable
+```
+
+**With Delta Compression:**
+```
+Year 1:  800 MB  ✓ 60% reduction
+Year 2:  1.0 GB  ✓ Space efficient
+```
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Core Data Structures (Week 1)
