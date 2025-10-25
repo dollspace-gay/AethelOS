@@ -314,6 +314,124 @@ pub unsafe fn init_thread_stack(stack_top: u64, _entry_point: fn() -> !) -> u64 
     stack_top
 }
 
+/// Save the current thread's context from an interrupt frame (for preemptive multitasking)
+///
+/// When a timer interrupt fires, the CPU has already pushed an interrupt frame onto the stack.
+/// This function captures that state and stores it in the thread's context structure.
+///
+/// # Arguments
+/// * `context` - Where to save the interrupted thread's state
+/// * `stack_frame` - The interrupt stack frame pushed by the CPU
+///
+/// # Safety
+/// Must be called from interrupt context with a valid interrupt stack frame
+#[unsafe(naked)]
+pub unsafe extern "C" fn save_preempted_context(_context: *mut ThreadContext, _stack_frame: *const u64) {
+    core::arch::naked_asm!(
+        // rdi = context pointer (first argument)
+        // rsi = stack_frame pointer (second argument)
+
+        // The interrupt frame on stack contains (from low to high address):
+        // [rsi+0]:  RIP (instruction pointer when interrupted)
+        // [rsi+8]:  CS  (code segment)
+        // [rsi+16]: RFLAGS
+        // [rsi+24]: RSP (stack pointer when interrupted)
+        // [rsi+32]: SS  (stack segment)
+
+        // Save general purpose registers
+        "mov [rdi + 0x00], r15",
+        "mov [rdi + 0x08], r14",
+        "mov [rdi + 0x10], r13",
+        "mov [rdi + 0x18], r12",
+        "mov [rdi + 0x20], rbp",
+        "mov [rdi + 0x28], rbx",
+        "mov [rdi + 0x30], r11",
+        "mov [rdi + 0x38], r10",
+        "mov [rdi + 0x40], r9",
+        "mov [rdi + 0x48], r8",
+        "mov [rdi + 0x50], rax",
+        "mov [rdi + 0x58], rcx",
+        "mov [rdi + 0x60], rdx",
+        // Save rsi before we overwrite it
+        "mov [rdi + 0x68], rsi",
+        "mov [rdi + 0x70], rdi",
+
+        // Now save the interrupt frame fields from [rsi]
+        "mov rax, [rsi + 0]",    // RIP from interrupt frame
+        "mov [rdi + 0x78], rax",
+
+        "mov rax, [rsi + 8]",    // CS from interrupt frame
+        "mov [rdi + 0x80], rax",
+
+        "mov rax, [rsi + 16]",   // RFLAGS from interrupt frame
+        "mov [rdi + 0x88], rax",
+
+        "mov rax, [rsi + 24]",   // RSP from interrupt frame
+        "mov [rdi + 0x90], rax",
+
+        "mov rax, [rsi + 32]",   // SS from interrupt frame
+        "mov [rdi + 0x98], rax",
+
+        "ret",
+    );
+}
+
+/// Switch from a preempted thread to another thread (called from interrupt context)
+///
+/// This is similar to switch_context but assumes the old context was already saved
+/// via save_preempted_context. It only restores the new context and uses IRETQ.
+///
+/// # Arguments
+/// * `new_context` - The context to restore and resume
+///
+/// # Safety
+/// Must be called from interrupt context after save_preempted_context
+#[unsafe(naked)]
+pub unsafe extern "C" fn restore_context(_new_context: *const ThreadContext) -> ! {
+    core::arch::naked_asm!(
+        // rdi = new_context pointer
+
+        // Restore general purpose registers
+        "mov r15, [rdi + 0x00]",
+        "mov r14, [rdi + 0x08]",
+        "mov r13, [rdi + 0x10]",
+        "mov r12, [rdi + 0x18]",
+        "mov rbp, [rdi + 0x20]",
+        "mov rbx, [rdi + 0x28]",
+        "mov r11, [rdi + 0x30]",
+        "mov r10, [rdi + 0x38]",
+        "mov r9,  [rdi + 0x40]",
+        "mov r8,  [rdi + 0x48]",
+        "mov rax, [rdi + 0x50]",
+        "mov rcx, [rdi + 0x58]",
+        "mov rdx, [rdi + 0x60]",
+
+        // Switch to the new thread's stack
+        "mov rsp, [rdi + 0x90]",
+
+        // Build interrupt frame on the new stack for IRETQ
+        // Push in reverse order: SS, RSP, RFLAGS, CS, RIP
+        "push qword ptr [rdi + 0x98]",  // SS
+        "push qword ptr [rdi + 0x90]",  // RSP
+
+        // Push RFLAGS with IF (interrupt flag) set to enable interrupts
+        "mov rax, [rdi + 0x88]",
+        "or rax, 0x200",                // Set IF flag (bit 9)
+        "push rax",                      // RFLAGS
+
+        "push qword ptr [rdi + 0x80]",  // CS
+        "push qword ptr [rdi + 0x78]",  // RIP
+
+        // Restore the last two registers
+        "mov rsi, [rdi + 0x68]",
+        "mov rdi, [rdi + 0x70]",
+
+        // Use IRETQ to return to the new thread
+        // This pops RIP, CS, RFLAGS, RSP, SS and properly returns from interrupt
+        "iretq",
+    );
+}
+
 /// Helper wrapper for thread entry points
 ///
 /// This function is called when a new thread is first scheduled.

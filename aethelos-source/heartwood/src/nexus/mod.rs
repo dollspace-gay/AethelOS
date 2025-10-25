@@ -23,10 +23,11 @@ pub use message::{Message, MessageType, MessagePriority};
 pub use nexus_core::NexusCore;
 pub use channel::{Channel, ChannelId, ChannelCapability};
 
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
 
-static mut NEXUS: MaybeUninit<Mutex<NexusCore>> = MaybeUninit::uninit();
+// Using InterruptSafeLock to prevent deadlocks during preemptive multitasking
+static mut NEXUS: MaybeUninit<InterruptSafeLock<NexusCore>> = MaybeUninit::uninit();
 static mut NEXUS_INITIALIZED: bool = false;
 
 /// Helper to write to serial for debugging
@@ -46,12 +47,12 @@ pub fn init() {
         let nexus_core = NexusCore::new();
         serial_out(b'x'); // NexusCore::new() complete
 
-        // Create mutex and write to static
-        serial_out(b's'); // Before Mutex::new
-        let mutex = Mutex::new(nexus_core);
-        serial_out(b'u'); // After Mutex::new
+        // Create interrupt-safe lock and write to static
+        serial_out(b's'); // Before InterruptSafeLock::new
+        let lock = InterruptSafeLock::new(nexus_core);
+        serial_out(b'u'); // After InterruptSafeLock::new
 
-        core::ptr::write(NEXUS.as_mut_ptr(), mutex);
+        core::ptr::write(NEXUS.as_mut_ptr(), lock);
         serial_out(b'!'); // Written to static
 
         NEXUS_INITIALIZED = true;
@@ -59,7 +60,7 @@ pub fn init() {
 }
 
 /// Get reference to NEXUS (assumes initialized)
-unsafe fn get_nexus() -> &'static Mutex<NexusCore> {
+unsafe fn get_nexus() -> &'static InterruptSafeLock<NexusCore> {
     NEXUS.assume_init_ref()
 }
 

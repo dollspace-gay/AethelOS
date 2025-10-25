@@ -10,7 +10,7 @@
 //! with both action and wisdom.
 
 use core::fmt::Write;
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
 
 /// Maximum command buffer size
@@ -69,22 +69,22 @@ impl CommandBuffer {
     }
 }
 
-/// Global command buffer
-static mut COMMAND_BUFFER: MaybeUninit<Mutex<CommandBuffer>> = MaybeUninit::uninit();
+/// Global command buffer (interrupt-safe for keyboard input)
+static mut COMMAND_BUFFER: MaybeUninit<InterruptSafeLock<CommandBuffer>> = MaybeUninit::uninit();
 static mut BUFFER_INITIALIZED: bool = false;
 
 /// Initialize the shell
 pub fn init() {
     unsafe {
         let buffer = CommandBuffer::new();
-        let mutex = Mutex::new(buffer);
-        core::ptr::write(COMMAND_BUFFER.as_mut_ptr(), mutex);
+        let lock = InterruptSafeLock::new(buffer);
+        core::ptr::write(COMMAND_BUFFER.as_mut_ptr(), lock);
         BUFFER_INITIALIZED = true;
     }
 }
 
 /// Get reference to command buffer
-unsafe fn get_buffer() -> &'static Mutex<CommandBuffer> {
+unsafe fn get_buffer() -> &'static InterruptSafeLock<CommandBuffer> {
     COMMAND_BUFFER.assume_init_ref()
 }
 
@@ -215,6 +215,7 @@ fn execute_command(input: &str) {
         "echo" => cmd_echo(args),
         "clear" => cmd_clear(),
         "help" => cmd_help(),
+        "preempt" => cmd_preempt(args),
         "" => {
             // Empty command, just show new prompt
         }
@@ -290,10 +291,56 @@ fn cmd_clear() {
 fn cmd_help() {
     crate::println!("◈ Eldarin Shell - Available Commands");
     crate::println!();
-    crate::println!("  harmony     - Display system harmony and scheduler statistics");
-    crate::println!("  echo [text] - Echo the provided text back to the screen");
-    crate::println!("  clear       - Clear the screen and redisplay the banner");
-    crate::println!("  help        - Show this help message");
+    crate::println!("  harmony         - Display system harmony and scheduler statistics");
+    crate::println!("  preempt [cmd]   - Control preemptive multitasking");
+    crate::println!("                    'status'  - Show current preemption state");
+    crate::println!("                    'enable'  - Enable preemption (10ms quantum)");
+    crate::println!("                    'disable' - Disable preemption");
+    crate::println!("  echo [text]     - Echo the provided text back to the screen");
+    crate::println!("  clear           - Clear the screen and redisplay the banner");
+    crate::println!("  help            - Show this help message");
     crate::println!();
     crate::println!("The shell listens to your intentions and translates them into action.");
+}
+
+/// The Preempt Spell - Control preemptive multitasking
+fn cmd_preempt(args: &str) {
+    match args.trim() {
+        "status" | "" => {
+            // Show current status
+            crate::println!("◈ Preemption Status");
+            crate::println!();
+
+            let enabled = crate::loom_of_fate::is_preemption_enabled();
+            let quantum = crate::loom_of_fate::get_time_quantum();
+
+            crate::println!("  Mode: {}", if enabled { "PREEMPTIVE" } else { "COOPERATIVE" });
+            crate::println!("  Time Quantum: {}ms", quantum);
+            crate::println!();
+
+            if enabled {
+                crate::println!("  ⚠ Preemption is ENABLED");
+                crate::println!("  Threads will be interrupted after {}ms", quantum);
+                crate::println!("  Note: Timer interrupt integration not yet active");
+            } else {
+                crate::println!("  ✓ Cooperative mode (threads yield voluntarily)");
+            }
+        }
+        "enable" => {
+            crate::println!("◈ Enabling preemptive multitasking...");
+            crate::loom_of_fate::enable_preemption(100); // 100ms quantum (conservative)
+            crate::println!("  ✓ Preemption enabled with 100ms quantum");
+            crate::println!("  ⚠ ACTIVE: Timer will now trigger context switches!");
+            crate::println!("  Use 'preempt disable' if system becomes unstable");
+        }
+        "disable" => {
+            crate::println!("◈ Disabling preemptive multitasking...");
+            crate::loom_of_fate::disable_preemption();
+            crate::println!("  ✓ Returned to cooperative mode");
+        }
+        _ => {
+            crate::println!("Unknown preempt command: '{}'", args);
+            crate::println!("Usage: preempt [status|enable|disable]");
+        }
+    }
 }

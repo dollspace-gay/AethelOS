@@ -31,7 +31,7 @@ heapless = "0.8"
 
 # Boot and low-level
 bootloader = "0.9"
-x86_64 = "0.15"
+x86_64 = "0.14"
 uart_16550 = "0.3"
 pic8259 = "0.10"
 

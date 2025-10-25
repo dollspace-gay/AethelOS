@@ -27,13 +27,14 @@ pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights};
 pub use sanctuary::Sanctuary;
 pub use ephemeral_mist::EphemeralMist;
+pub use interrupt_lock::InterruptSafeLock;
 
-use spin::Mutex;
 use core::mem::MaybeUninit;
 use alloc::boxed::Box;
 
 // MANA_POOL stores a Box<ManaPool> - a small pointer to heap-allocated ManaPool
-static mut MANA_POOL: MaybeUninit<Mutex<Box<ManaPool>>> = MaybeUninit::uninit();
+// Using InterruptSafeLock to prevent deadlocks during preemptive multitasking
+static mut MANA_POOL: MaybeUninit<InterruptSafeLock<Box<ManaPool>>> = MaybeUninit::uninit();
 static mut MANA_POOL_INITIALIZED: bool = false;
 
 pub struct ManaPool {
@@ -168,12 +169,12 @@ pub fn init() {
         let mana_pool_on_heap = ManaPool::new_boxed();
         serial_out(b'O'); // ManaPool::new_boxed returned
 
-        // Create mutex and write to static
-        serial_out(b'P'); // Before Mutex::new
-        let mutex = Mutex::new(mana_pool_on_heap);
-        serial_out(b'Q'); // After Mutex::new
+        // Create interrupt-safe lock and write to static
+        serial_out(b'P'); // Before InterruptSafeLock::new
+        let lock = InterruptSafeLock::new(mana_pool_on_heap);
+        serial_out(b'Q'); // After InterruptSafeLock::new
 
-        core::ptr::write(MANA_POOL.as_mut_ptr(), mutex);
+        core::ptr::write(MANA_POOL.as_mut_ptr(), lock);
         serial_out(b'R'); // Written to static
 
         MANA_POOL_INITIALIZED = true;
@@ -182,7 +183,7 @@ pub fn init() {
 }
 
 /// Get reference to MANA_POOL (assumes initialized)
-unsafe fn get_mana_pool() -> &'static Mutex<Box<ManaPool>> {
+unsafe fn get_mana_pool() -> &'static InterruptSafeLock<Box<ManaPool>> {
     MANA_POOL.assume_init_ref()
 }
 

@@ -2,13 +2,22 @@
 
 This document outlines the implementation plan for addressing TODOs and "In a real OS" comments found in the codebase. These improvements are necessary to transition from a demonstration OS to a production-ready system.
 
+## Status Overview
+
+| Item | Status | Date Completed | Notes |
+|------|--------|----------------|-------|
+| 1. Preemptive Multitasking | 🟡 **PLANNED** | - | See [PREEMPTIVE_MULTITASKING_PLAN.md](PREEMPTIVE_MULTITASKING_PLAN.md) |
+| 2. Interrupt-safe Statistics | ✅ **COMPLETE** | 2025-10-25 | Uses `without_interrupts()` wrapper |
+| 3. Production Memory Allocator | ✅ **COMPLETE** | 2025-10-25 | Buddy allocator with 64B-64KB blocks |
+| 4. Memory Deallocation | ✅ **COMPLETE** | 2025-10-25 | Integrated with buddy allocator |
+
 ## Overview
 
 Found 4 critical areas requiring implementation:
-1. Preemptive Multitasking
-2. Interrupt-safe Statistics
-3. Production Memory Allocator
-4. Memory Deallocation
+1. Preemptive Multitasking (PLANNED - detailed plan available)
+2. ✅ Interrupt-safe Statistics (COMPLETE)
+3. ✅ Production Memory Allocator (COMPLETE)
+4. ✅ Memory Deallocation (COMPLETE)
 
 ---
 

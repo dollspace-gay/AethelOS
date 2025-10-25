@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 
 const MAX_THREADS: usize = 1024;
 
-/// The harmony-based cooperative scheduler
+/// The harmony-based cooperative/preemptive scheduler
 pub struct Scheduler {
     threads: Vec<Thread>,
     stacks: Vec<Stack>,  // Stack storage (owned by scheduler)
@@ -22,6 +22,14 @@ pub struct Scheduler {
     latest_metrics: HarmonyMetrics,
     /// Total number of context switches performed
     context_switches: u64,
+
+    // === Preemptive Multitasking Support ===
+    /// Is preemptive scheduling enabled?
+    preemption_enabled: bool,
+    /// Time quantum in timer ticks (e.g., 10 ticks = 10ms if timer is 1ms)
+    time_quantum: u64,
+    /// Ticks remaining in current thread's quantum
+    quantum_remaining: u64,
 }
 
 impl Default for Scheduler {
@@ -65,6 +73,10 @@ impl Scheduler {
             harmony_analyzer,
             latest_metrics: HarmonyMetrics::default(),
             context_switches: 0,
+            // Preemption disabled by default (cooperative mode)
+            preemption_enabled: false,
+            time_quantum: 100,  // Default: 100ms quantum (conservative for testing)
+            quantum_remaining: 100,
         }
     }
 
@@ -105,6 +117,16 @@ impl Scheduler {
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).context_switches), 0);
             serial_out(b'j');
+
+            // Initialize preemption fields (disabled by default, 100ms quantum for testing)
+            core::ptr::write(core::ptr::addr_of_mut!((*ptr).preemption_enabled), false);
+            serial_out(b'k');
+
+            core::ptr::write(core::ptr::addr_of_mut!((*ptr).time_quantum), 100);
+            serial_out(b'l');
+
+            core::ptr::write(core::ptr::addr_of_mut!((*ptr).quantum_remaining), 100);
+            serial_out(b'm');
 
             boxed.assume_init()
         }
@@ -421,6 +443,67 @@ impl Scheduler {
         if let Some(thread) = self.find_thread_mut(thread_id) {
             thread.set_state(ThreadState::Weaving);
         }
+    }
+
+    // === Preemptive Multitasking Control ===
+
+    /// Enable preemptive multitasking with the given time quantum
+    ///
+    /// # Arguments
+    /// * `quantum_ms` - Time quantum in milliseconds (e.g., 10 = 10ms per thread)
+    ///
+    /// When enabled, the timer interrupt will trigger context switches
+    /// after the quantum expires, even if the thread hasn't yielded.
+    pub fn enable_preemption(&mut self, quantum_ms: u64) {
+        self.preemption_enabled = true;
+        self.time_quantum = quantum_ms;
+        self.quantum_remaining = quantum_ms;
+    }
+
+    /// Disable preemptive multitasking (return to cooperative mode)
+    ///
+    /// Threads will only switch when they explicitly call yield_now().
+    pub fn disable_preemption(&mut self) {
+        self.preemption_enabled = false;
+    }
+
+    /// Check if the current thread's quantum has expired and should be preempted
+    ///
+    /// Returns true if:
+    /// - Preemption is enabled
+    /// - Current thread's quantum has expired (quantum_remaining == 0)
+    pub fn should_preempt(&mut self) -> bool {
+        if !self.preemption_enabled {
+            return false;
+        }
+
+        if self.quantum_remaining == 0 {
+            // Quantum expired! Reset for next thread
+            self.quantum_remaining = self.time_quantum;
+            return true;
+        }
+
+        false
+    }
+
+    /// Decrement the current thread's quantum (called on each timer tick)
+    ///
+    /// This is called from the timer interrupt handler to track how much
+    /// time the current thread has used.
+    pub fn tick_quantum(&mut self) {
+        if self.preemption_enabled && self.quantum_remaining > 0 {
+            self.quantum_remaining -= 1;
+        }
+    }
+
+    /// Check if preemption is currently enabled
+    pub fn is_preemption_enabled(&self) -> bool {
+        self.preemption_enabled
+    }
+
+    /// Get the current time quantum setting
+    pub fn get_time_quantum(&self) -> u64 {
+        self.time_quantum
     }
 }
 

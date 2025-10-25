@@ -2,7 +2,7 @@
 //!
 //! Minimal keyboard initialization - we trust that BIOS has already set up the PS/2 controller
 
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
 use x86_64::instructions::port::Port;
 
@@ -24,7 +24,8 @@ impl Keyboard {
     }
 }
 
-static mut KEYBOARD: MaybeUninit<Mutex<Keyboard>> = MaybeUninit::uninit();
+// Interrupt-safe keyboard state (accessed from keyboard interrupt handler)
+static mut KEYBOARD: MaybeUninit<InterruptSafeLock<Keyboard>> = MaybeUninit::uninit();
 static mut KEYBOARD_INITIALIZED: bool = false;
 
 /// Initialize keyboard - just create the state structure
@@ -33,8 +34,8 @@ static mut KEYBOARD_INITIALIZED: bool = false;
 pub fn init() {
     unsafe {
         let keyboard = Keyboard::new();
-        let mutex = Mutex::new(keyboard);
-        core::ptr::write(KEYBOARD.as_mut_ptr(), mutex);
+        let lock = InterruptSafeLock::new(keyboard);
+        core::ptr::write(KEYBOARD.as_mut_ptr(), lock);
         KEYBOARD_INITIALIZED = true;
     }
 }

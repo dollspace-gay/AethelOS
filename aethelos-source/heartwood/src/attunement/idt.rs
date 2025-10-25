@@ -37,19 +37,54 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 }
 
 /// The Timer Interrupt Handler - The Rhythm of Time
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+///
+/// This handler is called on every timer tick (typically 1ms).
+/// It increments the tick counter and, if preemptive multitasking is enabled,
+/// tracks quantum usage and triggers context switches.
+extern "x86-interrupt" fn timer_interrupt_handler(stack_frame: InterruptStackFrame) {
     // Increment the timer tick counter
     crate::attunement::timer::tick();
 
-    // REMOVED: Calling yield_now() from interrupt handler causes preemptive
-    // context switches that can interrupt critical sections (like Drop implementations).
-    // For cooperative multitasking, threads should only yield explicitly.
-    // TODO: If you want preemptive multitasking, you need to:
-    //   1. Ensure all critical sections are interrupt-safe
-    //   2. Use proper interrupt-safe context switching
-    // crate::loom_of_fate::yield_now();
+    // === PREEMPTIVE MULTITASKING (Phase 3) ===
+    // Now that all critical sections are interrupt-safe (Phase 1 complete),
+    // we can safely perform preemptive context switches from interrupt context.
 
-    // Send End of Interrupt
+    unsafe {
+        let should_preempt = {
+            let mut loom = crate::loom_of_fate::get_loom().lock();
+
+            // Decrement the current thread's quantum
+            loom.tick_quantum();
+
+            // Check if we should preempt
+            loom.should_preempt()
+            // Lock is dropped here
+        };
+
+        // If quantum expired and preemption is enabled, switch threads
+        if should_preempt {
+            // Send End of Interrupt BEFORE context switch
+            // This ensures the PIC is ready for the next interrupt
+            super::PICS.lock().notify_end_of_interrupt(32);
+
+            // Create an array with the interrupt frame values in the correct order
+            // The order matches the hardware interrupt frame: RIP, CS, RFLAGS, RSP, SS
+            let frame_values: [u64; 5] = [
+                stack_frame.instruction_pointer.as_u64(),
+                stack_frame.code_segment,
+                stack_frame.cpu_flags,
+                stack_frame.stack_pointer.as_u64(),
+                stack_frame.stack_segment,
+            ];
+            let frame_ptr = frame_values.as_ptr();
+
+            // Perform preemptive context switch
+            // This function never returns - it uses IRETQ to jump to the new thread
+            crate::loom_of_fate::preemptive_yield(frame_ptr);
+        }
+    }
+
+    // Send End of Interrupt (only if we didn't preempt)
     unsafe {
         super::PICS.lock().notify_end_of_interrupt(32);
     }

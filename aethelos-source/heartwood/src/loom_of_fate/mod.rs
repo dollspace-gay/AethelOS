@@ -26,13 +26,14 @@ pub use scheduler::{Scheduler, SchedulerStats};
 pub use thread::{Thread, ThreadId, ThreadState, ThreadPriority};
 pub use harmony::{HarmonyAnalyzer, HarmonyMetrics};
 
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
 use alloc::boxed::Box;
 
 // Manual static initialization using MaybeUninit
 // LOOM stores a Box<Scheduler> - a small pointer to heap-allocated Scheduler
-static mut LOOM: MaybeUninit<Mutex<Box<Scheduler>>> = MaybeUninit::uninit();
+// Using InterruptSafeLock to prevent deadlocks during preemptive multitasking
+static mut LOOM: MaybeUninit<InterruptSafeLock<Box<Scheduler>>> = MaybeUninit::uninit();
 static mut LOOM_INITIALIZED: bool = false;
 
 /// Helper to write to serial for debugging
@@ -62,13 +63,13 @@ pub fn init() {
         let scheduler_on_heap = Scheduler::new_boxed();
         serial_out(b'B'); // Scheduler::new_boxed returned
 
-        // Create a mutex around the small Box pointer
-        serial_out(b'C'); // About to create Mutex
-        let mutex = Mutex::new(scheduler_on_heap);
-        serial_out(b'D'); // Mutex created
+        // Create an interrupt-safe lock around the small Box pointer
+        serial_out(b'C'); // About to create InterruptSafeLock
+        let lock = InterruptSafeLock::new(scheduler_on_heap);
+        serial_out(b'D'); // InterruptSafeLock created
 
-        // Write the small Mutex<Box<Scheduler>> to static
-        core::ptr::write(LOOM.as_mut_ptr(), mutex);
+        // Write the small InterruptSafeLock<Box<Scheduler>> to static
+        core::ptr::write(LOOM.as_mut_ptr(), lock);
         serial_out(b'y'); // Written to MaybeUninit
 
         LOOM_INITIALIZED = true;
@@ -105,7 +106,10 @@ pub fn init() {
 }
 
 /// Get reference to LOOM (assumes initialized)
-unsafe fn get_loom() -> &'static Mutex<Box<Scheduler>> {
+///
+/// # Safety
+/// LOOM must be initialized before calling this function
+pub unsafe fn get_loom() -> &'static InterruptSafeLock<Box<Scheduler>> {
     LOOM.assume_init_ref()
 }
 
@@ -190,6 +194,65 @@ pub fn yield_now() {
     });
 }
 
+/// Preemptive yield - called from timer interrupt when quantum expires
+///
+/// This is specifically designed for interrupt context and properly handles
+/// the interrupt stack frame to avoid corruption.
+///
+/// # Arguments
+/// * `interrupt_frame_ptr` - Pointer to the interrupt stack frame (RIP, CS, RFLAGS, RSP, SS)
+///
+/// # Safety
+/// - Must only be called from timer interrupt handler
+/// - Interrupts are already disabled in interrupt context
+/// - All locks are interrupt-safe (Phase 1 complete)
+/// - The interrupt_frame_ptr must point to the valid interrupt frame on stack
+pub unsafe fn preemptive_yield(interrupt_frame_ptr: *const u64) -> ! {
+    // We're already in interrupt context with interrupts disabled
+    // No need for without_interrupts() wrapper
+
+    // Step 1: Lock scheduler and prepare for context switch
+    let (should_switch, from_ctx_ptr, to_ctx_ptr) = {
+        let mut loom = get_loom().lock();
+
+        // Only yield if we actually have a current thread
+        if loom.current_thread_id().is_none() {
+            // No current thread - this shouldn't happen, but handle it gracefully
+            // We need to return via IRETQ, not return normally
+            // Just restore the interrupted state
+            drop(loom);
+            core::arch::asm!(
+                "iretq",
+                options(noreturn)
+            );
+        }
+
+        // Prepare for context switch and get pointers
+        loom.prepare_yield()
+    };
+
+    // Step 2: If we should switch, save current context and switch
+    if should_switch {
+        // The lock is now dropped! (loom was dropped at end of block above)
+
+        // Save the interrupted thread's context from the interrupt frame
+        context::save_preempted_context(from_ctx_ptr as *mut context::ThreadContext, interrupt_frame_ptr);
+
+        // Now restore the new thread's context and jump to it
+        // This uses IRETQ and never returns
+        context::restore_context(to_ctx_ptr);
+
+        // UNREACHABLE - restore_context uses iretq and never returns
+    } else {
+        // No context switch needed - just return from interrupt normally
+        // Use IRETQ to properly return from the interrupt
+        core::arch::asm!(
+            "iretq",
+            options(noreturn)
+        );
+    }
+}
+
 /// Get the current thread ID
 pub fn current_thread() -> Option<ThreadId> {
     without_interrupts(|| {
@@ -201,6 +264,50 @@ pub fn current_thread() -> Option<ThreadId> {
 pub fn stats() -> SchedulerStats {
     without_interrupts(|| {
         unsafe { get_loom().lock().stats() }
+    })
+}
+
+// === Preemptive Multitasking Control ===
+
+/// Enable preemptive multitasking with the given time quantum
+///
+/// # Arguments
+/// * `quantum_ms` - Time quantum in milliseconds (e.g., 10 = 10ms per thread)
+///
+/// When enabled, the timer interrupt will trigger context switches
+/// after the quantum expires, even if the thread hasn't yielded.
+///
+/// # Example
+/// ```
+/// // Enable preemption with 10ms quantum
+/// loom_of_fate::enable_preemption(10);
+/// ```
+pub fn enable_preemption(quantum_ms: u64) {
+    without_interrupts(|| {
+        unsafe { get_loom().lock().enable_preemption(quantum_ms) }
+    });
+}
+
+/// Disable preemptive multitasking (return to cooperative mode)
+///
+/// Threads will only switch when they explicitly call yield_now().
+pub fn disable_preemption() {
+    without_interrupts(|| {
+        unsafe { get_loom().lock().disable_preemption() }
+    });
+}
+
+/// Check if preemption is currently enabled
+pub fn is_preemption_enabled() -> bool {
+    without_interrupts(|| {
+        unsafe { get_loom().lock().is_preemption_enabled() }
+    })
+}
+
+/// Get the current time quantum setting
+pub fn get_time_quantum() -> u64 {
+    without_interrupts(|| {
+        unsafe { get_loom().lock().get_time_quantum() }
     })
 }
 

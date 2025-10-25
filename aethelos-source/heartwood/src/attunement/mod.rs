@@ -11,7 +11,7 @@ pub mod keyboard;
 pub mod timer;
 
 use pic8259::ChainedPics;
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 
 /// The standard offset for remapping the PICs
 /// IRQs 0-15 become interrupts 32-47
@@ -20,8 +20,9 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
 /// The Guardian - Our Programmable Interrupt Controller
 /// This is THE source of truth for PIC management
-pub static PICS: Mutex<ChainedPics> =
-    Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+/// CRITICAL: Must be interrupt-safe since accessed from interrupt handlers for EOI
+pub static PICS: InterruptSafeLock<ChainedPics> =
+    InterruptSafeLock::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
 /// Initialize the Attunement Layer
 /// This follows The Grand Unification sequence
