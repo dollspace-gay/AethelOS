@@ -362,9 +362,10 @@ pub fn _print(args: fmt::Arguments) {
             serial_out(b'+'); // Got lock!
             writer.write_fmt(args).unwrap();
             serial_out(b'E'); // Write complete
-            // Lock automatically released and interrupts restored here
-
-            serial_out(b'D'); // Done writing
+            serial_out(b'['); // About to drop
+            drop(writer); // Explicitly drop the guard HERE
+            serial_out(b']'); // Drop complete
+            serial_out(b'D'); // Done writing (after lock released)
         } else {
             serial_out(b'U'); // Uninitialized!
         }

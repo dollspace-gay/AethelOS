@@ -41,8 +41,13 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     // Increment the timer tick counter
     crate::attunement::timer::tick();
 
-    // Trigger the scheduler to allow thread switching
-    crate::loom_of_fate::yield_now();
+    // REMOVED: Calling yield_now() from interrupt handler causes preemptive
+    // context switches that can interrupt critical sections (like Drop implementations).
+    // For cooperative multitasking, threads should only yield explicitly.
+    // TODO: If you want preemptive multitasking, you need to:
+    //   1. Ensure all critical sections are interrupt-safe
+    //   2. Use proper interrupt-safe context switching
+    // crate::loom_of_fate::yield_now();
 
     // Send End of Interrupt
     unsafe {

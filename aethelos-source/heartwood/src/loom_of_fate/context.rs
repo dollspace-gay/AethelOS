@@ -78,7 +78,9 @@ impl ThreadContext {
             rip: entry_point,
             cs: 0x08,  // Kernel code segment (from GDT)
             rflags: 0x202,  // Interrupts enabled (IF flag)
-            rsp: stack_top,
+            // CRITICAL: RSP must be misaligned by 8 for x86-64 ABI
+            // (as if a call instruction just pushed a return address)
+            rsp: stack_top - 8,
             ss: 0x10,  // Kernel data segment (from GDT)
         }
     }

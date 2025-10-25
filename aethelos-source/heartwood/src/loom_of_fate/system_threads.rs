@@ -136,18 +136,7 @@ pub fn keyboard_thread() -> ! {
         );
     }
 
-    // TEMPORARILY DISABLED: println hangs in write_fmt
-    // crate::println!("  ⟡ Keyboard thread awakened");
-
-    // DEBUG: Can we reach the loop?
-    unsafe {
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") 0x3f8u16,
-            in("al") b'L' as u8,  // L = Reached loop
-            options(nomem, nostack, preserves_flags)
-        );
-    }
+    crate::println!("  ⟡ Keyboard thread awakened");
 
     loop {
         // In a message-passing system, this would:
@@ -211,35 +200,23 @@ pub fn shell_thread() -> ! {
         );
     }
 
-    // TEMPORARILY DISABLED: println hangs in write_fmt
-    // crate::println!("  ⟡ Shell thread awakened");
-    // crate::println!();
-    // display_welcome();
+    crate::println!("  ⟡ Shell thread awakened");
 
-    // DEBUG: Shell thread continuing
+    // Debug: Mark that first println completed
     unsafe {
         core::arch::asm!(
             "out dx, al",
             in("dx") 0x3f8u16,
-            in("al") b'S' as u8,  // S = Shell continuing
+            in("al") b'*' as u8,  // * = First println returned
             options(nomem, nostack, preserves_flags)
         );
     }
+
+    crate::println!();
+    display_welcome();
 
     // Display the initial shell prompt
-    // TEMPORARILY DISABLED: print! also hangs in write_fmt
-    // crate::eldarin::display_prompt();
-
-    // Debug: mark that shell loop started
-    unsafe {
-        let mut port = 0x3f8u16;
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") b'L' as u8,  // L = Loop started
-            options(nomem, nostack, preserves_flags)
-        );
-    }
+    crate::eldarin::display_prompt();
 
     // Shell loop - poll for commands that were buffered by interrupt handler
     loop {
@@ -258,16 +235,27 @@ pub fn shell_thread() -> ! {
 
 /// Display the welcome message
 fn display_welcome() {
-    crate::println!("╔══════════════════════════════════════════════════════════════════╗");
-    crate::println!("║                                                                  ║");
-    crate::println!("║                    Welcome to AethelOS                           ║");
-    crate::println!("║                                                                  ║");
-    crate::println!("║         The Operating System of Symbiotic Computing              ║");
-    crate::println!("║                                                                  ║");
-    crate::println!("║  \"We do not command the machine; we dance with it.\"              ║");
-    crate::println!("║                                                                  ║");
-    crate::println!("╚══════════════════════════════════════════════════════════════════╝");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'1', options(nomem, nostack, preserves_flags)); }
+    crate::println!("====================================================================");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'2', options(nomem, nostack, preserves_flags)); }
+    crate::println!("                                                                    ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'3', options(nomem, nostack, preserves_flags)); }
+    crate::println!("                     Welcome to AethelOS                            ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'4', options(nomem, nostack, preserves_flags)); }
+    crate::println!("                                                                    ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'5', options(nomem, nostack, preserves_flags)); }
+    crate::println!("          The Operating System of Symbiotic Computing               ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'6', options(nomem, nostack, preserves_flags)); }
+    crate::println!("                                                                    ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'7', options(nomem, nostack, preserves_flags)); }
+    crate::println!("   \"We do not command the machine; we dance with it.\"              ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'8', options(nomem, nostack, preserves_flags)); }
+    crate::println!("                                                                    ");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'9', options(nomem, nostack, preserves_flags)); }
+    crate::println!("====================================================================");
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'0', options(nomem, nostack, preserves_flags)); }
     crate::println!();
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'!', options(nomem, nostack, preserves_flags)); }
 
     // NOTE: Removed stats display to avoid spinlock deadlock with interrupts
     // The stats() function locks the scheduler, and if an interrupt fires

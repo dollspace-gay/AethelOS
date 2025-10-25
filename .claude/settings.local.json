@@ -79,7 +79,9 @@
       "Bash(cmd /c \"cd F:\\OS\\aethelos-source && start \"\"AethelOS\"\" \"\"C:\\Program Files\\qemu\\qemu-system-x86_64.exe\"\" -cdrom aethelos.iso -m 256M\")",
       "Bash(cmd /c \"cd /d F:\\OS\\aethelos-source && start \"\" \"C:Program Filesqemuqemu-system-x86_64.exe\" -cdrom aethelos.iso -m 256M\")",
       "Bash(cmd /c \"cd /d F:\\OS\\aethelos-source && cargo build 2>&1 | findstr /C:\"Compiling\" /C:\"Finished\" /C:\"error\"\")",
-      "Bash(cargo doc:*)"
+      "Bash(cargo doc:*)",
+      "Bash(cmd /c \"cd /d F:\\OS\\aethelos-source && taskkill /F /IM qemu-system-x86_64.exe 2>nul & cd /d F:\\OS\\aethelos-source & del serial.log 2>nul & start /B \"\" \"C:Program Filesqemuqemu-system-x86_64.exe\" -cdrom aethelos.iso -serial file:serial.log -m 256M -display gtk -no-reboot -no-shutdown\")",
+      "Bash(cmd /c \"cd /d F:\\OS\\aethelos-source && taskkill /F /IM qemu-system-x86_64.exe 2>nul & del serial.log 2>nul & start /B \"\" \"C:Program Filesqemuqemu-system-x86_64.exe\" -cdrom aethelos.iso -serial file:serial.log -m 256M -display gtk -no-reboot -no-shutdown\")"
     ],
     "deny": [],
     "ask": []
