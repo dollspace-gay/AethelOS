@@ -12,7 +12,7 @@ rustflags = [
     "-C", "link-arg=-n",  # --nmagic: Don't page-align file offsets
     "-C", "link-arg=-z",
     "-C", "link-arg=max-page-size=0x1000",
-    "-C", "link-arg=-TF:/OS/aethelos-source/heartwood/linker.ld",
+    "-C", "link-arg=-TF:/OS/heartwood/linker.ld",
     "-C", "relocation-model=static",
 ]
 

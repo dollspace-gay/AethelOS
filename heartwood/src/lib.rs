@@ -8,8 +8,6 @@
 
 extern crate alloc;
 
-use core::panic::PanicInfo;
-
 // Import the production buddy allocator
 use mana_pool::allocator::BuddyAllocator;
 
@@ -46,15 +44,17 @@ pub mod vga_buffer;
 pub mod rtl;  // Runtime library with memcpy, etc.
 pub mod eldarin;  // The Eldarin Shell
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
+pub mod vfs;  // Virtual File System layer
 
 // Re-export key types
 pub use nexus::{Message, MessageType, MessagePriority, NexusError};
 pub use loom_of_fate::{ThreadId, ThreadState, ThreadPriority, LoomError};
 pub use mana_pool::{ObjectHandle, AllocationPurpose, ManaError};
+pub use vfs::{FileSystem, Path, FsError, DirEntry, FileStat};
 
 /// Panic handler for lib builds
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
