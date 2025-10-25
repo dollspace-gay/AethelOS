@@ -58,6 +58,7 @@ pub fn on_interrupt() {
         // Basic scancode to character mapping (US QWERTY, lowercase only)
         // Only handle key PRESS events
         let ch = match scancode {
+            // Number row
             0x02 => Some('1'),
             0x03 => Some('2'),
             0x04 => Some('3'),
@@ -68,6 +69,10 @@ pub fn on_interrupt() {
             0x09 => Some('8'),
             0x0A => Some('9'),
             0x0B => Some('0'),
+            0x0C => Some('-'),  // Minus/Hyphen
+            0x0D => Some('='),  // Equals
+
+            // Top letter row
             0x10 => Some('q'),
             0x11 => Some('w'),
             0x12 => Some('e'),
@@ -78,6 +83,10 @@ pub fn on_interrupt() {
             0x17 => Some('i'),
             0x18 => Some('o'),
             0x19 => Some('p'),
+            0x1A => Some('['),
+            0x1B => Some(']'),
+
+            // Middle letter row
             0x1E => Some('a'),
             0x1F => Some('s'),
             0x20 => Some('d'),
@@ -87,6 +96,10 @@ pub fn on_interrupt() {
             0x24 => Some('j'),
             0x25 => Some('k'),
             0x26 => Some('l'),
+            0x27 => Some(';'),
+            0x28 => Some('\''),
+
+            // Bottom letter row
             0x2C => Some('z'),
             0x2D => Some('x'),
             0x2E => Some('c'),
@@ -94,8 +107,13 @@ pub fn on_interrupt() {
             0x30 => Some('b'),
             0x31 => Some('n'),
             0x32 => Some('m'),
-            0x39 => Some(' '),  // Space
-            0x1C => Some('\n'), // Enter
+            0x33 => Some(','),
+            0x34 => Some('.'),
+            0x35 => Some('/'),
+
+            // Special keys
+            0x39 => Some(' '),    // Space
+            0x1C => Some('\n'),   // Enter
             0x0E => Some('\x08'), // Backspace
             0x48 => Some('\x01'), // Up arrow (special control char)
             0x50 => Some('\x02'), // Down arrow (special control char)

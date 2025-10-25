@@ -411,10 +411,17 @@ fn execute_command(input: &str) {
 
     match command {
         "harmony" => cmd_harmony(),
+        "mana-flow" => cmd_mana_flow(),
+        "soothe" => cmd_soothe(args),
+        "release" => cmd_release(args),
+        "observe-weave" => cmd_observe_weave(),
+        "weave-new" => cmd_weave_new(args),
+        "rest" => cmd_rest(args),
         "echo" => cmd_echo(args),
         "clear" => cmd_clear(),
         "help" => cmd_help(),
         "preempt" => cmd_preempt(args),
+        "uptime" => cmd_uptime(),
         "" => {
             // Empty command, just show new prompt
         }
@@ -488,16 +495,30 @@ fn cmd_clear() {
 
 /// The Help Spell - Show available commands
 fn cmd_help() {
-    crate::println!("◈ Eldarin Shell - Available Commands");
+    crate::println!("◈ Eldarin Shell - The Voice of Symbiotic Communion");
     crate::println!();
-    crate::println!("  harmony         - Display system harmony and scheduler statistics");
-    crate::println!("  preempt [cmd]   - Control preemptive multitasking");
-    crate::println!("                    'status'  - Show current preemption state");
-    crate::println!("                    'enable'  - Enable preemption (10ms quantum)");
-    crate::println!("                    'disable' - Disable preemption");
-    crate::println!("  echo [text]     - Echo the provided text back to the screen");
-    crate::println!("  clear           - Clear the screen and redisplay the banner");
-    crate::println!("  help            - Show this help message");
+    crate::println!("System Observation:");
+    crate::println!("  harmony            - Display system harmony and thread statistics");
+    crate::println!("  mana-flow          - Visualize memory (Mana Pool) usage");
+    crate::println!("  observe-weave      - Real-time view of the Loom's activity");
+    crate::println!("  uptime             - Show how long the realm has been awake");
+    crate::println!();
+    crate::println!("Thread Management:");
+    crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
+    crate::println!("  soothe [id]        - Lower a thread's priority (more harmonious)");
+    crate::println!("  release [id]       - Gracefully release a thread's resources");
+    crate::println!("  rest [ms]          - Rest for a duration (sleep)");
+    crate::println!();
+    crate::println!("System Control:");
+    crate::println!("  preempt [cmd]      - Control preemptive multitasking");
+    crate::println!("                       'status'  - Show preemption state");
+    crate::println!("                       'enable'  - Enable (100ms quantum)");
+    crate::println!("                       'disable' - Return to cooperative mode");
+    crate::println!("  clear              - Clear the screen");
+    crate::println!();
+    crate::println!("Utilities:");
+    crate::println!("  echo [text]        - Repeat text (test the shell)");
+    crate::println!("  help               - Show this message");
     crate::println!();
     crate::println!("The shell listens to your intentions and translates them into action.");
 }
@@ -542,4 +563,170 @@ fn cmd_preempt(args: &str) {
             crate::println!("Usage: preempt [status|enable|disable]");
         }
     }
+}
+
+/// The Mana-Flow Spell - Visualize memory usage with elegant bars
+fn cmd_mana_flow() {
+    crate::println!("◈ Mana Pool - The Flow of Essence");
+    crate::println!();
+
+    let stats = crate::mana_pool::stats();
+
+    let sanctuary_total_kb = stats.sanctuary_total / 1024;
+    let sanctuary_used_kb = stats.sanctuary_used / 1024;
+    let sanctuary_free_kb = (stats.sanctuary_total - stats.sanctuary_used) / 1024;
+
+    let ephemeral_total_kb = stats.ephemeral_total / 1024;
+    let ephemeral_used_kb = stats.ephemeral_used / 1024;
+    let ephemeral_free_kb = (stats.ephemeral_total - stats.ephemeral_used) / 1024;
+
+    let total_bytes = stats.sanctuary_total + stats.ephemeral_total;
+    let used_bytes = stats.sanctuary_used + stats.ephemeral_used;
+    let total_kb = total_bytes / 1024;
+    let used_kb = used_bytes / 1024;
+    let free_kb = (total_bytes - used_bytes) / 1024;
+
+    let used_percent = if total_bytes > 0 {
+        (used_bytes * 100) / total_bytes
+    } else {
+        0
+    };
+
+    // Draw a beautiful progress bar
+    crate::println!("  Total Essence: {} KB", total_kb);
+    crate::println!();
+    crate::print!("  [");
+
+    let bar_width = 50;
+    let filled = (used_percent as usize * bar_width) / 100;
+    for i in 0..bar_width {
+        if i < filled {
+            crate::print!("█");
+        } else {
+            crate::print!("░");
+        }
+    }
+    crate::println!("] {}%", used_percent);
+    crate::println!();
+
+    crate::println!("  Sustenance (Used):     {} KB", used_kb);
+    crate::println!("  Free Flow (Available): {} KB", free_kb);
+    crate::println!();
+
+    crate::println!("  Sanctuary (Long-lived):");
+    crate::println!("    Used: {} KB / {} KB", sanctuary_used_kb, sanctuary_total_kb);
+    crate::println!();
+
+    crate::println!("  Ephemeral Mist (Short-lived):");
+    crate::println!("    Used: {} KB / {} KB", ephemeral_used_kb, ephemeral_total_kb);
+    crate::println!();
+
+    crate::println!("  Total Objects: {}", stats.total_objects);
+
+    if used_bytes == 0 {
+        crate::println!();
+        crate::println!("  Status: ◈ The Mana Pool flows freely, untouched");
+    } else if used_percent < 50 {
+        crate::println!();
+        crate::println!("  Status: ✓ Abundant mana available");
+    } else if used_percent < 80 {
+        crate::println!();
+        crate::println!("  Status: ◈ Mana flow is balanced");
+    } else {
+        crate::println!();
+        crate::println!("  Status: ⚠ Mana reserves running low");
+    }
+}
+
+/// The Uptime Spell - Show how long the system has been running
+fn cmd_uptime() {
+    let ticks = crate::attunement::timer::ticks();
+    let seconds = ticks / 1000;  // Assuming 1ms ticks
+    let minutes = seconds / 60;
+    let hours = minutes / 60;
+    let days = hours / 24;
+
+    crate::println!("◈ Time Since Awakening");
+    crate::println!();
+
+    if days > 0 {
+        crate::println!("  {} days, {} hours, {} minutes, {} seconds",
+            days, hours % 24, minutes % 60, seconds % 60);
+    } else if hours > 0 {
+        crate::println!("  {} hours, {} minutes, {} seconds",
+            hours, minutes % 60, seconds % 60);
+    } else if minutes > 0 {
+        crate::println!("  {} minutes, {} seconds", minutes, seconds % 60);
+    } else {
+        crate::println!("  {} seconds", seconds);
+    }
+
+    crate::println!("  ({} timer ticks)", ticks);
+}
+
+/// The Soothe Spell - Lower a thread's priority
+fn cmd_soothe(args: &str) {
+    crate::println!("◈ Soothing a Thread");
+    crate::println!();
+    crate::println!("  Feature not yet implemented.");
+    crate::println!("  This will lower the priority of thread: {}", args);
+    crate::println!();
+    crate::println!("  \"Be gentle, for every thread serves the realm.\"");
+}
+
+/// The Release Spell - Gracefully terminate a thread
+fn cmd_release(args: &str) {
+    crate::println!("◈ Releasing a Thread");
+    crate::println!();
+    crate::println!("  Feature not yet implemented.");
+    crate::println!("  This will gracefully release thread: {}", args);
+    crate::println!();
+    crate::println!("  \"A thread's resources return to the Mana Pool,\"");
+    crate::println!("  \"its fate gently unwoven from the Loom.\"");
+}
+
+/// The Observe-Weave Spell - Real-time system monitor
+fn cmd_observe_weave() {
+    crate::println!("◈ Observing the Loom's Weave");
+    crate::println!();
+    crate::println!("  Feature not yet fully implemented.");
+    crate::println!();
+    crate::println!("  This command will show a real-time, continuously");
+    crate::println!("  updating view of the Loom's activity:");
+    crate::println!();
+    crate::println!("  • Threads and their states (Weaving/Resting)");
+    crate::println!("  • Harmony metrics in real-time");
+    crate::println!("  • Memory flow visualization");
+    crate::println!("  • Context switch rate");
+    crate::println!();
+    crate::println!("  Press 'q' to return to the shell (future feature)");
+    crate::println!();
+    crate::println!("  \"Watch the threads dance in their eternal weave...\"");
+}
+
+/// The Weave-New Spell - Spawn a new thread
+fn cmd_weave_new(args: &str) {
+    crate::println!("◈ Weaving a New Thread");
+    crate::println!();
+    crate::println!("  Feature not yet implemented.");
+    crate::println!("  This will create a new thread named: {}", args);
+    crate::println!();
+    crate::println!("  \"A new thread shall join the grand tapestry.\"");
+}
+
+/// The Rest Spell - Sleep for a duration
+fn cmd_rest(args: &str) {
+    let ms: u64 = args.trim().parse().unwrap_or(1000);
+
+    crate::println!("◈ Entering a State of Rest");
+    crate::println!();
+    crate::println!("  Resting for {} milliseconds...", ms);
+
+    // Simple busy-wait (in a real implementation, this would yield to other threads)
+    let start = crate::attunement::timer::ticks();
+    while crate::attunement::timer::ticks() - start < ms {
+        // Busy wait
+    }
+
+    crate::println!("  ✓ Awakened");
 }
