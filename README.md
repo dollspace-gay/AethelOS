@@ -83,30 +83,60 @@ APIs for developers:
 ## Project Structure
 
 ```
-aethelos-source/
+aethelos/                    # Project root
 ├── GENESIS.scroll           # Philosophical and architectural overview
+├── DESIGN.md                # Design philosophy and principles
+├── ARCHITECTURE.txt         # Technical architecture notes
+├── CLAUDE.md                # AI assistant development guide
+├── README.md                # This file
 ├── Cargo.toml               # Workspace configuration
+├── rust-toolchain.toml      # Rust version specification
+├── BOOT_AETHELOS.bat        # Windows boot script
 │
 ├── awakening/               # Bootloader
 │   ├── boot.asm             # First stage (assembly)
 │   └── heartwood_loader/    # Second stage (Rust)
 │
 ├── heartwood/               # The Kernel
-│   ├── nexus/               # IPC system
-│   ├── loom-of-fate/        # Scheduler
-│   ├── mana-pool/           # Memory management
-│   └── attunement/          # Hardware abstraction
+│   ├── src/
+│   │   ├── main.rs          # Kernel entry point
+│   │   ├── lib.rs           # Kernel library
+│   │   ├── nexus/           # IPC system (module)
+│   │   ├── loom_of_fate/    # Scheduler (module)
+│   │   ├── mana_pool/       # Memory management (module)
+│   │   ├── attunement/      # Hardware abstraction (module)
+│   │   ├── boot/            # Boot code (Multiboot2)
+│   │   ├── eldarin.rs       # Interactive shell
+│   │   ├── vga_buffer.rs    # VGA text mode driver
+│   │   └── irq_safe_mutex.rs # Interrupt-safe synchronization
+│   ├── Cargo.toml           # Kernel package configuration
+│   ├── x86_64-aethelos.json # Custom target specification
+│   └── linker.ld            # Linker script
 │
-├── groves/                  # User-space services
-│   ├── world-tree_grove/    # Filesystem
-│   ├── the-weave_grove/     # Compositor
-│   ├── lanthir_grove/       # Window manager
+├── groves/                  # User-space services (skeletal)
+│   ├── world-tree_grove/    # Filesystem service
+│   ├── the-weave_grove/     # Compositor service
+│   ├── lanthir_grove/       # Window manager service
 │   └── network_sprite/      # Network daemon
 │
-└── ancient-runes/           # Core libraries
-    ├── corelib/             # Standard library
-    ├── weaving/             # GUI toolkit
-    └── script/              # Shell API
+├── ancient-runes/           # Core libraries (skeletal)
+│   ├── corelib/             # Standard library
+│   ├── weaving/             # GUI toolkit
+│   └── script/              # Shell scripting API
+│
+├── docs/                    # Architecture and planning documents
+│   ├── PREEMPTIVE_MULTITASKING_PLAN.md
+│   ├── VGA_GRAPHICS_MODE_PLAN.md
+│   ├── WORLD_TREE_PLAN.md
+│   ├── GLIMMER_FORGE_PLAN.md
+│   └── PRODUCTION_READINESS_PLAN.md
+│
+└── isodir/                  # ISO build directory
+    └── boot/
+        ├── grub/            # GRUB configuration
+        │   └── grub.cfg
+        └── aethelos/        # Kernel binary location
+            └── heartwood.bin
 ```
 
 ## Building and Running
@@ -121,27 +151,37 @@ aethelos-source/
 ### Build Commands
 
 ```bash
-# Build the kernel (from heartwood directory)
+# Build the kernel (from project root)
 cd heartwood
-cargo build --bin heartwood --target x86_64-aethelos.json
+cargo build --target x86_64-aethelos.json
 
-# Create bootable ISO (from aethelos-source root)
-cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin
-grub-mkrescue -o aethelos.iso isodir
+# Create bootable ISO (from project root, requires WSL/Linux)
+cd ..
+wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir"
 
-# Run in QEMU
-qemu-system-x86_64 -cdrom aethelos.iso -serial file:serial.log -m 256M
+# Run in QEMU (Windows)
+"C:\Program Files\qemu\qemu-system-x86_64.exe" -cdrom aethelos.iso -serial file:serial.log -m 256M -display gtk -no-reboot -no-shutdown
+
+# Run in QEMU (Linux/macOS)
+qemu-system-x86_64 -cdrom aethelos.iso -serial file:serial.log -m 256M -display gtk -no-reboot -no-shutdown
 ```
 
 ### Windows Build Script
 
+Use the provided `BOOT_AETHELOS.bat` script:
+
 ```cmd
 @echo off
+REM Build kernel
 cd heartwood
-cargo build --bin heartwood --target x86_64-aethelos.json
+cargo build --target x86_64-aethelos.json
 cd ..
+
+REM Create ISO
 wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir"
-"C:\Program Files\qemu\qemu-system-x86_64.exe" -cdrom aethelos.iso -m 256M
+
+REM Boot in QEMU
+"C:\Program Files\qemu\qemu-system-x86_64.exe" -cdrom aethelos.iso -serial file:serial.log -m 256M -display gtk -no-reboot -no-shutdown
 ```
 
 ## Key Innovations

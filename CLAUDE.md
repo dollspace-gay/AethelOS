@@ -20,7 +20,7 @@
 
 ### Build Commands
 
-**From project root (`aethelos-source/`):**
+**From project root:**
 
 ```bash
 # 1. Build the kernel
@@ -40,7 +40,7 @@ BOOT_AETHELOS.bat
 
 **Quick rebuild workflow (one-liner with error checking):**
 ```bash
-cd /f/OS/aethelos-source/heartwood && cargo build --bin heartwood --target x86_64-aethelos.json 2>&1 | grep -E "(Finished|error)" && cd .. && wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir 2>&1 | grep success"
+cd heartwood && cargo build --target x86_64-aethelos.json 2>&1 | grep -E "(Finished|error)" && cd .. && wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir 2>&1 | grep success"
 ```
 
 **Note:** This filters output to show only build status and ISO creation success, making it faster to spot issues.
