@@ -185,6 +185,10 @@ static mut BUFFER_INITIALIZED: bool = false;
 static mut COMMAND_HISTORY: MaybeUninit<InterruptSafeLock<CommandHistory>> = MaybeUninit::uninit();
 static mut HISTORY_INITIALIZED: bool = false;
 
+/// Paging state for help menu
+static mut PAGING_ACTIVE: bool = false;
+static mut PAGING_PAGE: usize = 0;
+
 /// Initialize the shell
 pub fn init() {
     unsafe {
@@ -339,6 +343,18 @@ pub fn poll() {
         };
 
         if should_execute {
+            // Check if we're in paging mode
+            if PAGING_ACTIVE {
+                // Clear buffer and advance to next page
+                {
+                    let mut buffer = get_buffer().lock();
+                    buffer.clear();
+                }
+                PAGING_PAGE += 1;
+                show_help_page(PAGING_PAGE);
+                return;
+            }
+
             // Copy command out of buffer
             let mut cmd_copy: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
             let cmd_len = {
@@ -421,6 +437,10 @@ fn execute_command(input: &str) {
         "help" => cmd_help(),
         "preempt" => cmd_preempt(args),
         "uptime" => cmd_uptime(),
+        "vfs-test" => cmd_vfs_test(),
+        "vfs-info" => cmd_vfs_info(),
+        "vfs-ls" => cmd_vfs_ls(args),
+        "vfs-cat" => cmd_vfs_cat(args),
         "" => {
             // Empty command, just show new prompt
         }
@@ -493,33 +513,85 @@ fn cmd_clear() {
 }
 
 /// The Help Spell - Show available commands
+///
+/// NOTE: Paging support would require refactoring the keyboard input system
+/// to support synchronous key reading. For now, use 'clear' before 'help'
+/// if the screen is cluttered.
 fn cmd_help() {
-    crate::println!("◈ Eldarin Shell - The Voice of Symbiotic Communion");
-    crate::println!();
-    crate::println!("System Observation:");
-    crate::println!("  harmony            - Display system harmony and thread statistics");
-    crate::println!("  mana-flow          - Visualize memory (Mana Pool) usage");
-    crate::println!("  observe-weave      - Real-time view of the Loom's activity");
-    crate::println!("  uptime             - Show how long the realm has been awake");
-    crate::println!();
-    crate::println!("Thread Management:");
-    crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
-    crate::println!("  soothe [id]        - Lower a thread's priority (more harmonious)");
-    crate::println!("  release [id]       - Gracefully release a thread's resources");
-    crate::println!("  rest [ms]          - Rest for a duration (sleep)");
-    crate::println!();
-    crate::println!("System Control:");
-    crate::println!("  preempt [cmd]      - Control preemptive multitasking");
-    crate::println!("                       'status'  - Show preemption state");
-    crate::println!("                       'enable'  - Enable (100ms quantum)");
-    crate::println!("                       'disable' - Return to cooperative mode");
-    crate::println!("  clear              - Clear the screen");
-    crate::println!();
-    crate::println!("Utilities:");
-    crate::println!("  echo [text]        - Repeat text (test the shell)");
-    crate::println!("  help               - Show this message");
-    crate::println!();
-    crate::println!("The shell listens to your intentions and translates them into action.");
+    unsafe {
+        PAGING_ACTIVE = true;
+        PAGING_PAGE = 0;
+    }
+    show_help_page(0);
+}
+
+fn show_help_page(page: usize) {
+    match page {
+        0 => {
+            // Page 1: Header + System Observation + Thread Management
+            crate::println!("◈ Eldarin Shell - The Voice of Symbiotic Communion");
+            crate::println!();
+            crate::println!("═══════════════════════════════════════════════════");
+            crate::println!("System Observation:");
+            crate::println!("  harmony            - Display system harmony and thread statistics");
+            crate::println!("  mana-flow          - Visualize memory (Mana Pool) usage");
+            crate::println!("  observe-weave      - Real-time view of the Loom's activity");
+            crate::println!("  uptime             - Show how long the realm has been awake");
+            crate::println!();
+            crate::println!("Thread Management:");
+            crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
+            crate::println!("  soothe [id]        - Lower a thread's priority (more harmonious)");
+            crate::println!("  release [id]       - Gracefully release a thread's resources");
+            crate::println!("  rest [ms]          - Rest for a duration (sleep)");
+            crate::println!();
+            crate::println!("─── Press ENTER for next page (1/3) ───");
+        }
+        1 => {
+            // Page 2: System Control + Filesystem Testing
+            crate::println!("═══════════════════════════════════════════════════");
+            crate::println!("System Control:");
+            crate::println!("  preempt [cmd]      - Control preemptive multitasking");
+            crate::println!("                       'status'  - Show preemption state");
+            crate::println!("                       'enable'  - Enable (100ms quantum)");
+            crate::println!("                       'disable' - Return to cooperative mode");
+            crate::println!("  clear              - Clear the screen");
+            crate::println!();
+            crate::println!("═══════════════════════════════════════════════════");
+            crate::println!("Filesystem (VFS) Testing:");
+            crate::println!("  vfs-test           - Run comprehensive FAT32 driver tests");
+            crate::println!("  vfs-info           - Show mounted filesystem information");
+            crate::println!("  vfs-ls [path]      - List directory contents (default: /)");
+            crate::println!("  vfs-cat <file>     - Display file contents");
+            crate::println!();
+            crate::println!("─── Press ENTER for next page (2/3) ───");
+        }
+        2 => {
+            // Page 3: Utilities + End
+            crate::println!("═══════════════════════════════════════════════════");
+            crate::println!("Utilities:");
+            crate::println!("  echo [text]        - Repeat text (test the shell)");
+            crate::println!("  help               - Show this message");
+            crate::println!();
+            crate::println!("═══════════════════════════════════════════════════");
+            crate::println!();
+            crate::println!("Tip: Type 'clear' to clear the screen before running help!");
+            crate::println!();
+            // Exit paging mode
+            unsafe {
+                PAGING_ACTIVE = false;
+                PAGING_PAGE = 0;
+            }
+            display_prompt();
+        }
+        _ => {
+            // Safety fallback - should never reach here
+            unsafe {
+                PAGING_ACTIVE = false;
+                PAGING_PAGE = 0;
+            }
+            display_prompt();
+        }
+    }
 }
 
 /// The Preempt Spell - Control preemptive multitasking
@@ -768,4 +840,248 @@ fn cmd_rest(args: &str) {
     }
 
     crate::println!("  ✓ Awakened");
+}
+
+// ==================== VFS TEST COMMANDS ====================
+
+/// VFS Test - Run comprehensive FAT32 driver tests
+fn cmd_vfs_test() {
+    use crate::vfs::{FileSystem, Path};
+    use crate::vfs::mock_fat32::MockFat32Device;
+    use crate::vfs::fat32::Fat32;
+    use alloc::boxed::Box;
+
+    crate::println!("◈ FAT32 Driver Test Suite");
+    crate::println!();
+
+    // Create mock FAT32 device
+    crate::println!("  1. Creating mock FAT32 filesystem...");
+    let device = Box::new(MockFat32Device::new());
+
+    // Mount FAT32
+    crate::println!("  2. Mounting FAT32 volume...");
+    let fat32 = match Fat32::new(device) {
+        Ok(fs) => {
+            crate::println!("     ✓ Mounted successfully!");
+            fs
+        }
+        Err(e) => {
+            crate::println!("     ✗ Mount failed: {:?}", e);
+            return;
+        }
+    };
+
+    // Test 1: Check filesystem info
+    crate::println!();
+    crate::println!("  3. Testing filesystem metadata...");
+    crate::println!("     Volume label: {}", fat32.bpb.volume_label);
+    crate::println!("     Filesystem: {}", fat32.bpb.fs_type);
+    crate::println!("     Bytes per sector: {}", fat32.bpb.bytes_per_sector);
+    crate::println!("     Cluster size: {} bytes", fat32.bpb.cluster_size());
+
+    // Test FSInfo
+    if let Some(free) = fat32.bpb.free_clusters() {
+        crate::println!("     Free clusters: {}", free);
+        if let Some(space) = fat32.bpb.free_space() {
+            crate::println!("     Free space: {} KB", space / 1024);
+        }
+    } else {
+        crate::println!("     FSInfo: Not available");
+    }
+
+    // Test 2: List root directory
+    crate::println!();
+    crate::println!("  4. Testing directory listing...");
+    match fat32.read_dir(&Path::new("/")) {
+        Ok(entries) => {
+            crate::println!("     Files in root directory:");
+            for entry in &entries {
+                let type_str = if entry.is_dir { "DIR " } else { "FILE" };
+                crate::println!("       [{}] {}", type_str, entry.name);
+            }
+            crate::println!("     ✓ Found {} entries", entries.len());
+        }
+        Err(e) => {
+            crate::println!("     ✗ Read directory failed: {:?}", e);
+        }
+    }
+
+    // Test 3: Read README.TXT
+    crate::println!();
+    crate::println!("  5. Testing file read (README.TXT)...");
+    match fat32.read(&Path::new("/README.TXT")) {
+        Ok(data) => {
+            if let Ok(text) = core::str::from_utf8(&data) {
+                crate::println!("     Content:");
+                for line in text.lines() {
+                    crate::println!("       {}", line);
+                }
+                crate::println!("     ✓ Read {} bytes", data.len());
+            } else {
+                crate::println!("     ✗ File contains invalid UTF-8");
+            }
+        }
+        Err(e) => {
+            crate::println!("     ✗ Read file failed: {:?}", e);
+        }
+    }
+
+    // Test 4: Get file stat
+    crate::println!();
+    crate::println!("  6. Testing file metadata (stat)...");
+    match fat32.stat(&Path::new("/TEST.TXT")) {
+        Ok(stat) => {
+            crate::println!("     Size: {} bytes", stat.size);
+            crate::println!("     Type: {}", if stat.is_dir { "Directory" } else { "File" });
+            crate::println!("     ✓ Stat successful");
+        }
+        Err(e) => {
+            crate::println!("     ✗ Stat failed: {:?}", e);
+        }
+    }
+
+    crate::println!();
+    crate::println!("◈ Test suite complete!");
+}
+
+/// VFS Info - Show filesystem information
+fn cmd_vfs_info() {
+    use crate::vfs::mock_fat32::MockFat32Device;
+    use crate::vfs::fat32::Fat32;
+    use alloc::boxed::Box;
+
+    crate::println!("◈ Filesystem Information");
+    crate::println!();
+
+    let device = Box::new(MockFat32Device::new());
+    let fat32 = match Fat32::new(device) {
+        Ok(fs) => fs,
+        Err(e) => {
+            crate::println!("Failed to mount: {:?}", e);
+            return;
+        }
+    };
+
+    crate::println!("  Filesystem Type:    {}", fat32.bpb.fs_type);
+    crate::println!("  Volume Label:       {}", fat32.bpb.volume_label);
+    crate::println!();
+    crate::println!("  Geometry:");
+    crate::println!("    Bytes per sector: {}", fat32.bpb.bytes_per_sector);
+    crate::println!("    Sectors/cluster:  {}", fat32.bpb.sectors_per_cluster);
+    crate::println!("    Cluster size:     {} bytes", fat32.bpb.cluster_size());
+    crate::println!("    Total sectors:    {}", fat32.bpb.total_sectors);
+    crate::println!();
+    crate::println!("  FAT Information:");
+    crate::println!("    Number of FATs:   {}", fat32.bpb.num_fats);
+    crate::println!("    Sectors per FAT:  {}", fat32.bpb.sectors_per_fat);
+    crate::println!("    Root cluster:     {}", fat32.bpb.root_cluster);
+    crate::println!();
+    crate::println!("  Special Sectors:");
+    crate::println!("    FSInfo sector:    {}", fat32.bpb.fsinfo_sector);
+    crate::println!("    Backup boot:      {}", fat32.bpb.backup_boot_sector);
+
+    if let Some(free) = fat32.bpb.free_clusters() {
+        crate::println!();
+        crate::println!("  Space (from FSInfo):");
+        crate::println!("    Free clusters:    {}", free);
+        if let Some(space) = fat32.bpb.free_space() {
+            crate::println!("    Free space:       {} KB ({} MB)",
+                space / 1024, space / 1024 / 1024);
+        }
+    }
+}
+
+/// VFS LS - List directory contents
+fn cmd_vfs_ls(args: &str) {
+    use crate::vfs::{FileSystem, Path};
+    use crate::vfs::mock_fat32::MockFat32Device;
+    use crate::vfs::fat32::Fat32;
+    use alloc::boxed::Box;
+
+    let path = if args.is_empty() { "/" } else { args.trim() };
+
+    let device = Box::new(MockFat32Device::new());
+    let fat32 = match Fat32::new(device) {
+        Ok(fs) => fs,
+        Err(e) => {
+            crate::println!("Failed to mount: {:?}", e);
+            return;
+        }
+    };
+
+    crate::println!("◈ Directory listing: {}", path);
+    crate::println!();
+
+    match fat32.read_dir(&Path::new(path)) {
+        Ok(entries) => {
+            let count = entries.len();
+            if entries.is_empty() {
+                crate::println!("  (empty directory)");
+            } else {
+                for entry in entries {
+                    let icon = if entry.is_dir { "📁" } else { "📄" };
+                    let type_str = if entry.is_dir { "DIR " } else { "FILE" };
+                    crate::println!("  {} [{}] {}", icon, type_str, entry.name);
+                }
+            }
+            crate::println!();
+            crate::println!("  Total: {} entries", count);
+        }
+        Err(e) => {
+            crate::println!("  ✗ Error: {:?}", e);
+        }
+    }
+}
+
+/// VFS CAT - Display file contents
+fn cmd_vfs_cat(args: &str) {
+    use crate::vfs::{FileSystem, Path};
+    use crate::vfs::mock_fat32::MockFat32Device;
+    use crate::vfs::fat32::Fat32;
+    use alloc::boxed::Box;
+
+    if args.is_empty() {
+        crate::println!("Usage: vfs-cat <filename>");
+        crate::println!("Example: vfs-cat /README.TXT");
+        return;
+    }
+
+    let filename = args.trim();
+
+    let device = Box::new(MockFat32Device::new());
+    let fat32 = match Fat32::new(device) {
+        Ok(fs) => fs,
+        Err(e) => {
+            crate::println!("Failed to mount: {:?}", e);
+            return;
+        }
+    };
+
+    crate::println!("◈ Reading: {}", filename);
+    crate::println!();
+
+    match fat32.read(&Path::new(filename)) {
+        Ok(data) => {
+            if let Ok(text) = core::str::from_utf8(&data) {
+                for line in text.lines() {
+                    crate::println!("{}", line);
+                }
+                crate::println!();
+                crate::println!("  ({} bytes)", data.len());
+            } else {
+                crate::println!("  (Binary file, {} bytes)", data.len());
+                crate::println!("  Hex dump:");
+                for (i, chunk) in data.chunks(16).enumerate() {
+                    crate::print!("  {:04x}: ", i * 16);
+                    for byte in chunk {
+                        crate::print!("{:02x} ", byte);
+                    }
+                    crate::println!();
+                }
+            }
+        }
+        Err(e) => {
+            crate::println!("  ✗ Error reading file: {:?}", e);
+        }
+    }
 }

@@ -10,6 +10,9 @@ use alloc::format;
 
 pub mod manager;
 pub mod mock;
+pub mod block_device;
+pub mod fat32;
+pub mod mock_fat32;
 
 #[cfg(test)]
 mod tests;
