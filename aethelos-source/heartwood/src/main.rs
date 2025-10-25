@@ -67,41 +67,21 @@ pub extern "C" fn _start() -> ! {
         let idle_context = loom_of_fate::get_idle_thread_context();
 
         // CRITICAL: Verify the actual offsets of ThreadContext fields
-        use core::mem::offset_of;
-        use heartwood::loom_of_fate::context::ThreadContext;
-
-        println!("DEBUG: ThreadContext field offsets:");
-        println!("  rip offset: {:#x}", offset_of!(ThreadContext, rip));
-        println!("  cs offset: {:#x}", offset_of!(ThreadContext, cs));
-        println!("  rflags offset: {:#x}", offset_of!(ThreadContext, rflags));
-        println!("  rsp offset: {:#x}", offset_of!(ThreadContext, rsp));
-        println!("  ss offset: {:#x}", offset_of!(ThreadContext, ss));
-
-        // Read all the critical fields from the context
+        // Read critical fields from the context for validation
         let ctx_ptr_addr = idle_context as u64;
         let ctx_rsp = (*idle_context).rsp;
-        let ctx_rip = (*idle_context).rip;
         let ctx_cs = (*idle_context).cs;
         let ctx_ss = (*idle_context).ss;
-        let ctx_rflags = (*idle_context).rflags;
 
-        println!("DEBUG: idle_context pointer = {:p} (as u64: {:#x})", idle_context, ctx_ptr_addr);
-        println!("DEBUG: idle_context.rsp = {:#x}", ctx_rsp);
-        println!("DEBUG: idle_context.rip = {:#x}", ctx_rip);
-        println!("DEBUG: idle_context.cs = {:#x}, ss = {:#x}, rflags = {:#x}",
-                 ctx_cs, ctx_ss, ctx_rflags);
-
-        // Check if RSP equals context pointer (memory corruption indicator)
+        // Validate context (silent checks - only error/warn on actual issues)
         if ctx_rsp == ctx_ptr_addr {
             println!("ERROR: RSP equals context pointer! Memory corruption detected!");
         }
-
-        // Check stack alignment (must be 16-byte aligned)
-        if ctx_rsp % 16 != 0 {
-            println!("WARNING: RSP not 16-byte aligned! rsp={:#x}", ctx_rsp);
+        // Check stack alignment: RSP should be (16n - 8) for x86-64 ABI
+        // (misaligned by 8 as if a call instruction pushed a return address)
+        if ctx_rsp % 16 != 8 {
+            println!("WARNING: RSP has incorrect alignment! rsp={:#x} (should be 16n-8)", ctx_rsp);
         }
-
-        // Verify segments are correct for kernel mode
         if ctx_cs != 0x08 {
             println!("WARNING: CS={:#x}, expected 0x08", ctx_cs);
         }
@@ -110,7 +90,6 @@ pub extern "C" fn _start() -> ! {
         }
 
         serial_out(b'X'); // About to call context_switch_first
-        println!("DEBUG: Calling context_switch_first NOW...");
 
         // CRITICAL: Force release all VGA buffer locks before the Great Hand-Off!
         // The spinlock MUST be clear or the first println in idle thread will deadlock

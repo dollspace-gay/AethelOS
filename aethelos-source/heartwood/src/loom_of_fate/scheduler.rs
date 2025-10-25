@@ -124,16 +124,11 @@ impl Scheduler {
         let stack_bottom = stack.bottom();
         let stack_top = stack.top();
 
-        crate::println!("DEBUG: Spawning thread {} with stack: bottom={:#x}, top={:#x}",
-                        thread_id.0, stack_bottom, stack_top);
-
         // CRITICAL: Keep stack alive IMMEDIATELY to prevent allocator from reusing this memory
         self.stacks.push(stack);
 
         // Create the thread with its stack
         let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top);
-
-        crate::println!("DEBUG: Thread {} context.rsp = {:#x}", thread_id.0, thread.context.rsp);
 
         self.threads.push(thread);
         self.ready_queue.push_back(thread_id);
