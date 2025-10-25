@@ -16,10 +16,29 @@ use core::mem::MaybeUninit;
 /// Maximum command buffer size
 const BUFFER_SIZE: usize = 256;
 
+/// Maximum number of commands to store in history
+const HISTORY_SIZE: usize = 32;
+
 /// The Scroll Buffer - stores the command being typed
 pub struct CommandBuffer {
     buffer: [u8; BUFFER_SIZE],
     position: usize,
+}
+
+/// Command History - stores previous commands for recall
+pub struct CommandHistory {
+    /// Ring buffer of previous commands
+    commands: [[u8; BUFFER_SIZE]; HISTORY_SIZE],
+    /// Length of each command in the ring buffer
+    lengths: [usize; HISTORY_SIZE],
+    /// Current write position in ring buffer
+    write_pos: usize,
+    /// Current read position when navigating history
+    read_pos: usize,
+    /// Total number of commands in history (up to HISTORY_SIZE)
+    count: usize,
+    /// True if currently navigating history
+    navigating: bool,
 }
 
 impl CommandBuffer {
@@ -67,11 +86,105 @@ impl CommandBuffer {
     pub fn is_empty(&self) -> bool {
         self.position == 0
     }
+
+    /// Set buffer contents from a byte slice
+    pub fn set_from_bytes(&mut self, bytes: &[u8]) {
+        self.clear();
+        let len = bytes.len().min(BUFFER_SIZE);
+        self.buffer[..len].copy_from_slice(&bytes[..len]);
+        self.position = len;
+    }
+}
+
+impl CommandHistory {
+    pub const fn new() -> Self {
+        CommandHistory {
+            commands: [[0; BUFFER_SIZE]; HISTORY_SIZE],
+            lengths: [0; HISTORY_SIZE],
+            write_pos: 0,
+            read_pos: 0,
+            count: 0,
+            navigating: false,
+        }
+    }
+
+    /// Add a command to history
+    pub fn add(&mut self, cmd: &str) {
+        if cmd.is_empty() {
+            return;
+        }
+
+        let bytes = cmd.as_bytes();
+        let len = bytes.len().min(BUFFER_SIZE);
+
+        self.commands[self.write_pos][..len].copy_from_slice(&bytes[..len]);
+        self.lengths[self.write_pos] = len;
+
+        self.write_pos = (self.write_pos + 1) % HISTORY_SIZE;
+        if self.count < HISTORY_SIZE {
+            self.count += 1;
+        }
+
+        // Reset navigation state
+        self.navigating = false;
+        self.read_pos = self.write_pos;
+    }
+
+    /// Navigate to previous command (up arrow)
+    /// Returns Some(command) if available, None if at the beginning
+    pub fn previous(&mut self) -> Option<&[u8]> {
+        if self.count == 0 {
+            return None;
+        }
+
+        if !self.navigating {
+            // First time navigating, start from most recent
+            self.navigating = true;
+            self.read_pos = if self.write_pos == 0 {
+                self.count - 1
+            } else {
+                self.write_pos - 1
+            };
+        } else {
+            // Already navigating, go back one more
+            if self.read_pos == 0 {
+                self.read_pos = self.count - 1;
+            } else {
+                self.read_pos -= 1;
+            }
+        }
+
+        let len = self.lengths[self.read_pos];
+        Some(&self.commands[self.read_pos][..len])
+    }
+
+    /// Navigate to next command (down arrow)
+    /// Returns Some(command) if available, None if at the end
+    pub fn next(&mut self) -> Option<&[u8]> {
+        if !self.navigating {
+            return None;
+        }
+
+        self.read_pos = (self.read_pos + 1) % self.count;
+
+        // If we're back at the write position, stop navigating (return to empty)
+        if self.read_pos == self.write_pos {
+            self.navigating = false;
+            return None;
+        }
+
+        let len = self.lengths[self.read_pos];
+        Some(&self.commands[self.read_pos][..len])
+    }
 }
 
 /// Global command buffer (interrupt-safe for keyboard input)
 static mut COMMAND_BUFFER: MaybeUninit<InterruptSafeLock<CommandBuffer>> = MaybeUninit::uninit();
 static mut BUFFER_INITIALIZED: bool = false;
+
+/// Global command history
+static mut COMMAND_HISTORY: MaybeUninit<InterruptSafeLock<CommandHistory>> = MaybeUninit::uninit();
+static mut HISTORY_INITIALIZED: bool = false;
 
 /// Initialize the shell
 pub fn init() {
@@ -80,12 +193,22 @@ pub fn init() {
         let lock = InterruptSafeLock::new(buffer);
         core::ptr::write(COMMAND_BUFFER.as_mut_ptr(), lock);
         BUFFER_INITIALIZED = true;
+
+        let history = CommandHistory::new();
+        let history_lock = InterruptSafeLock::new(history);
+        core::ptr::write(COMMAND_HISTORY.as_mut_ptr(), history_lock);
+        HISTORY_INITIALIZED = true;
     }
 }
 
 /// Get reference to command buffer
 unsafe fn get_buffer() -> &'static InterruptSafeLock<CommandBuffer> {
     COMMAND_BUFFER.assume_init_ref()
+}
+
+/// Get reference to command history
+unsafe fn get_history() -> &'static InterruptSafeLock<CommandHistory> {
+    COMMAND_HISTORY.assume_init_ref()
 }
 
 /// Handle a character from keyboard input
@@ -118,6 +241,76 @@ pub fn handle_char(ch: char) {
                     // Buffer full - could beep or show error
                 }
             }
+        }
+    }
+}
+
+/// Handle backspace key - erase character visually and from buffer
+pub fn handle_backspace() {
+    unsafe {
+        if !BUFFER_INITIALIZED {
+            return;
+        }
+
+        let mut buffer = get_buffer().lock();
+        if buffer.pop() {
+            // Erase character visually (VGA driver handles the erasure)
+            crate::print!("\x08");
+        }
+    }
+}
+
+/// Handle up arrow - navigate to previous command in history
+pub fn handle_arrow_up() {
+    unsafe {
+        if !BUFFER_INITIALIZED || !HISTORY_INITIALIZED {
+            return;
+        }
+
+        let mut history = get_history().lock();
+        if let Some(cmd_bytes) = history.previous() {
+            let mut buffer = get_buffer().lock();
+            let current_len = buffer.as_str().len();
+
+            // Erase current line (VGA driver erases each character as we backspace)
+            for _ in 0..current_len {
+                crate::print!("\x08");
+            }
+
+            // Set buffer to historical command and display it
+            buffer.set_from_bytes(cmd_bytes);
+            if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
+                crate::print!("{}", cmd_str);
+            }
+        }
+    }
+}
+
+/// Handle down arrow - navigate to next command in history
+pub fn handle_arrow_down() {
+    unsafe {
+        if !BUFFER_INITIALIZED || !HISTORY_INITIALIZED {
+            return;
+        }
+
+        let mut history = get_history().lock();
+        let mut buffer = get_buffer().lock();
+        let current_len = buffer.as_str().len();
+
+        // Erase current line (VGA driver erases each character as we backspace)
+        for _ in 0..current_len {
+            crate::print!("\x08");
+        }
+
+        if let Some(cmd_bytes) = history.next() {
+            // Set buffer to next historical command and display it
+            buffer.set_from_bytes(cmd_bytes);
+            if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
+                crate::print!("{}", cmd_str);
+            }
+        } else {
+            // At the end of history, clear buffer
+            buffer.clear();
         }
     }
 }
@@ -167,9 +360,15 @@ pub fn poll() {
                 buffer.clear();
             }
 
-            // Execute command
+            // Execute command and save to history
             if cmd_len > 0 {
                 if let Ok(cmd_str) = core::str::from_utf8(&cmd_copy[..cmd_len]) {
+                    // Save to history before executing
+                    if HISTORY_INITIALIZED {
+                        let mut history = get_history().lock();
+                        history.add(cmd_str);
+                    }
+
                     execute_command(cmd_str);
                 }
             }

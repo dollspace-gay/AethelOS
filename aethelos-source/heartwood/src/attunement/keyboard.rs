@@ -96,13 +96,33 @@ pub fn on_interrupt() {
             0x32 => Some('m'),
             0x39 => Some(' '),  // Space
             0x1C => Some('\n'), // Enter
+            0x0E => Some('\x08'), // Backspace
+            0x48 => Some('\x01'), // Up arrow (special control char)
+            0x50 => Some('\x02'), // Down arrow (special control char)
             _ => None,  // Ignore other keys
         };
 
-        // If we got a valid character, send it to both display and shell buffer
+        // Handle the character
         if let Some(character) = ch {
-            crate::print!("{}", character);
-            crate::eldarin::handle_char(character);
+            match character {
+                '\x08' => {
+                    // Backspace: erase character visually and update buffer
+                    crate::eldarin::handle_backspace();
+                }
+                '\x01' => {
+                    // Up arrow: navigate to previous command
+                    crate::eldarin::handle_arrow_up();
+                }
+                '\x02' => {
+                    // Down arrow: navigate to next command
+                    crate::eldarin::handle_arrow_down();
+                }
+                _ => {
+                    // Regular character: display and buffer it
+                    crate::print!("{}", character);
+                    crate::eldarin::handle_char(character);
+                }
+            }
         }
     }
 }

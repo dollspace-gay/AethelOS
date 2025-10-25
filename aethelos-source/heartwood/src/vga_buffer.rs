@@ -102,6 +102,27 @@ impl Writer {
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
+            b'\x08' => {
+                // Backspace: move cursor back and erase character
+                if self.column_position > 0 {
+                    self.column_position -= 1;
+                    let row = self.row_position;
+                    let col = self.column_position;
+
+                    // Write a space to erase the character
+                    unsafe {
+                        core::ptr::write_volatile(
+                            &mut self.buffer.chars[row][col] as *mut ScreenChar,
+                            ScreenChar {
+                                ascii_character: b' ',
+                                color_code: self.color_code,
+                            }
+                        );
+                    }
+
+                    move_cursor(self.row_position, self.column_position);
+                }
+            }
             byte => {
                 if self.column_position >= BUFFER_WIDTH {
                     self.new_line();
@@ -135,7 +156,7 @@ impl Writer {
         }
         for byte in s.bytes() {
             match byte {
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
+                0x20..=0x7e | b'\n' | b'\x08' => self.write_byte(byte),
                 _ => self.write_byte(0xfe), // ■ for unprintable
             }
         }
