@@ -20,6 +20,8 @@ pub mod capability;
 pub mod sanctuary;
 pub mod ephemeral_mist;
 pub mod allocator;
+pub mod interrupt_lock;
+pub mod buddy;
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights};
@@ -155,6 +157,8 @@ unsafe fn serial_out(c: u8) {
 }
 
 /// Initialize the Mana Pool
+///
+/// Note: The global allocator must be initialized BEFORE this function!
 pub fn init() {
     unsafe {
         serial_out(b'M'); // Mana pool init started

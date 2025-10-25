@@ -117,6 +117,13 @@ fn heartwood_init() {
     heartwood::vga_buffer::print_banner();
     println!("◈ Initializing Heartwood subsystems...");
 
+    // Initialize the global allocator FIRST (before any heap allocations!)
+    unsafe { serial_out(b'@'); }
+    println!("◈ Initializing global allocator...");
+    heartwood::init_global_allocator();
+    unsafe { serial_out(b'#'); }
+    println!("  ✓ Buddy allocator ready (4MB heap)");
+
     // Initialize the Mana Pool (memory management)
     unsafe { serial_out(b'C'); }
     println!("◈ Awakening Mana Pool...");

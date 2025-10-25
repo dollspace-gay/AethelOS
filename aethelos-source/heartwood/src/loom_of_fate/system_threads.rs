@@ -257,12 +257,67 @@ fn display_welcome() {
     crate::println!();
     unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'!', options(nomem, nostack, preserves_flags)); }
 
-    // NOTE: Removed stats display to avoid spinlock deadlock with interrupts
-    // The stats() function locks the scheduler, and if an interrupt fires
-    // while that lock is held, we get a deadlock.
-    // TODO: Implement interrupt-safe stats() or cache stats before threads start
+    // Display system statistics
+    // NOTE: This is now interrupt-safe! The stats() function uses without_interrupts()
+    // to disable interrupts while holding the scheduler lock, preventing deadlocks.
+    display_system_stats();
 
     crate::println!();
+}
+
+/// Display system statistics (threads and memory)
+///
+/// This is interrupt-safe because:
+/// - loom_of_fate::stats() uses without_interrupts()
+/// - Memory allocator stats use interrupt-safe locks
+fn display_system_stats() {
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b's', options(nomem, nostack, preserves_flags)); }
+
+    // Get scheduler stats
+    let loom_stats = crate::loom_of_fate::stats();
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b't', options(nomem, nostack, preserves_flags)); }
+
+    // Get memory stats
+    let mana_stats = crate::mana_pool::stats();
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'm', options(nomem, nostack, preserves_flags)); }
+
+    crate::println!("   System Status:");
+    crate::println!("   ─────────────");
+
+    // Thread statistics
+    crate::println!("   • Threads: {} total ({} weaving, {} resting)",
+        loom_stats.total_threads,
+        loom_stats.weaving_threads,
+        loom_stats.resting_threads);
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'a', options(nomem, nostack, preserves_flags)); }
+
+    crate::println!("   • Harmony: {:.2} (system: {:.2})",
+        loom_stats.average_harmony,
+        loom_stats.system_harmony);
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'b', options(nomem, nostack, preserves_flags)); }
+
+    if loom_stats.parasite_count > 0 {
+        crate::println!("   • Parasites detected: {}", loom_stats.parasite_count);
+    }
+
+    crate::println!("   • Context switches: {}", loom_stats.context_switches);
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'c', options(nomem, nostack, preserves_flags)); }
+
+    // Memory statistics
+    let used_kb = mana_stats.sanctuary_used / 1024;
+    let total_kb = mana_stats.sanctuary_total / 1024;
+    let used_percent = if total_kb > 0 {
+        (used_kb * 100) / total_kb
+    } else {
+        0
+    };
+
+    crate::println!("   • Memory: {} KB / {} KB ({}% used)",
+        used_kb, total_kb, used_percent);
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'd', options(nomem, nostack, preserves_flags)); }
+
+    crate::println!("   • Objects: {}", mana_stats.total_objects);
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'e', options(nomem, nostack, preserves_flags)); }
 }
 
 

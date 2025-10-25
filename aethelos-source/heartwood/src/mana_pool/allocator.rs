@@ -1,21 +1,27 @@
 //! Global allocator integration for Rust's allocation primitives
+//!
+//! Now uses a production-grade buddy allocator with proper deallocation
+//! and interrupt-safe locking.
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
+use super::buddy::LockedBuddyAllocator;
 
-/// A simple bump allocator for kernel heap
-pub struct BumpAllocator {
-    heap_start: usize,
-    heap_end: usize,
-    next: usize,
+/// Production buddy allocator for kernel heap
+///
+/// This allocator:
+/// - Supports both allocation AND deallocation (unlike the old bump allocator)
+/// - Is thread-safe and interrupt-safe
+/// - Uses the buddy system for efficient memory management
+/// - Minimizes fragmentation through block coalescing
+pub struct BuddyAllocator {
+    inner: LockedBuddyAllocator,
 }
 
-impl BumpAllocator {
+impl BuddyAllocator {
     pub const fn new() -> Self {
         Self {
-            heap_start: 0,
-            heap_end: 0,
-            next: 0,
+            inner: LockedBuddyAllocator::new(),
         }
     }
 
@@ -30,35 +36,37 @@ impl BumpAllocator {
     /// - This function is called exactly once during kernel initialization
     /// - No allocations are attempted before this function is called
     /// - The memory region remains valid for the entire lifetime of the allocator
-    pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
-        self.heap_start = heap_start;
-        self.heap_end = heap_start + heap_size;
-        self.next = heap_start;
+    pub unsafe fn init(&self, heap_start: usize, heap_size: usize) {
+        self.inner.init(heap_start, heap_size);
+    }
+
+    /// Get statistics about the allocator
+    pub fn stats(&self) -> super::buddy::BuddyStats {
+        self.inner.stats()
     }
 }
 
-unsafe impl GlobalAlloc for BumpAllocator {
+unsafe impl GlobalAlloc for BuddyAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // Simple bump allocation - not suitable for production
-        // In a real OS, use a proper allocator like buddy or slab
-        let alloc_start = align_up(self.next, layout.align());
-        let alloc_end = match alloc_start.checked_add(layout.size()) {
-            Some(end) => end,
-            None => return null_mut(),
-        };
+        // Account for alignment by allocating extra space if needed
+        let size = layout.size().max(layout.align());
 
-        if alloc_end > self.heap_end {
-            null_mut()
-        } else {
-            let ptr = alloc_start as *mut u8;
-            // Note: This is not thread-safe. Would need atomic ops in real implementation
-            ptr
+        match self.inner.allocate(size) {
+            Some(addr) => {
+                // Align the address to the required alignment
+                let aligned_addr = align_up(addr, layout.align());
+                aligned_addr as *mut u8
+            }
+            None => null_mut(),
         }
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // Bump allocator doesn't support deallocation
-        // In a real OS, implement proper deallocation
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // Production allocator: properly deallocates memory!
+        // Memory is returned to the pool and can be reused.
+        let addr = ptr as usize;
+        let size = layout.size().max(layout.align());
+        self.inner.deallocate(addr, size);
     }
 }
 

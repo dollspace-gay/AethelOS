@@ -8,67 +8,33 @@
 
 extern crate alloc;
 
-use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 
-/// Simple bump allocator for kernel heap
-/// Allocates from a fixed 1MB region starting at 3MB
-struct BumpAllocator {
-    heap_start: usize,
-    heap_end: usize,
-    next: core::sync::atomic::AtomicUsize,
-}
+// Import the production buddy allocator
+use mana_pool::allocator::BuddyAllocator;
 
-impl BumpAllocator {
-    const fn new() -> Self {
-        Self {
-            heap_start: 0x400000,  // 4MB (well above kernel and stack)
-            heap_end: 0x800000,    // 8MB (4MB heap - plenty of space)
-            next: core::sync::atomic::AtomicUsize::new(0x400000),
-        }
-    }
-}
-
-/// Helper to write to serial for debugging allocator
-unsafe fn serial_out(c: u8) {
-    core::arch::asm!(
-        "out dx, al",
-        in("dx") 0x3f8u16,
-        in("al") c,
-        options(nomem, nostack, preserves_flags)
-    );
-}
-
-unsafe impl GlobalAlloc for BumpAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        serial_out(b'['); // Entering alloc
-
-        let size = layout.size();
-        let align = layout.align();
-
-        // Align the allocation
-        let current = self.next.load(core::sync::atomic::Ordering::Relaxed);
-        let aligned = (current + align - 1) & !(align - 1);
-        let new_next = aligned + size;
-
-        if new_next > self.heap_end {
-            serial_out(b'!'); // Out of memory!
-            return core::ptr::null_mut(); // Out of memory
-        }
-
-        self.next.store(new_next, core::sync::atomic::Ordering::Relaxed);
-        serial_out(b']'); // Successful alloc
-        aligned as *mut u8
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // Bump allocator doesn't support deallocation
-        serial_out(b'-'); // Dealloc called (ignored)
-    }
-}
-
+/// Global allocator for the kernel
+/// Uses a production-grade buddy allocator with:
+/// - Proper allocation and deallocation
+/// - Interrupt-safe locking
+/// - Block coalescing to minimize fragmentation
+///
+/// Heap region: 4MB - 8MB (4MB total)
 #[global_allocator]
-static GLOBAL_ALLOCATOR: BumpAllocator = BumpAllocator::new();
+static GLOBAL_ALLOCATOR: BuddyAllocator = BuddyAllocator::new();
+
+/// Initialize the global allocator
+///
+/// MUST be called BEFORE any heap allocations occur (including Box, Vec, etc.)
+pub fn init_global_allocator() {
+    unsafe {
+        // Initialize the global allocator with heap region: 4MB - 8MB (4MB total)
+        const HEAP_START: usize = 0x400000;  // 4MB
+        const HEAP_SIZE: usize = 0x400000;   // 4MB
+
+        GLOBAL_ALLOCATOR.init(HEAP_START, HEAP_SIZE);
+    }
+}
 
 // Re-export core modules
 pub mod boot;
