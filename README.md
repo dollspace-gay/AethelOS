@@ -32,10 +32,13 @@ A hybrid microkernel containing only the most sacred responsibilities:
   - Resource negotiation based on system-wide harmony
   - Parasite detection and throttling (not killing)
 
-- **The Mana Pool**: Capability-based memory management
-  - No raw pointers in user space
-  - Purpose-driven allocation (Sanctuary vs Ephemeral Mist)
-  - Automatic reclamation via reference counting
+- **The Mana Pool**: Two-tier memory management system
+  - **Sanctuary Pool**: Persistent kernel allocations (stable, long-lived objects)
+  - **Ephemeral Pool**: Temporary allocations (short-lived, frequently recycled)
+  - Buddy allocator (64B to 64KB blocks, O(log n) allocation)
+  - Interrupt-safe locking for thread safety
+  - Real-time monitoring via `mana-flow` command
+  - Object manager for capability tracking (in progress)
 
 - **The Nexus**: High-speed asynchronous message passing (IPC)
   - Priority-aware message delivery
@@ -151,13 +154,27 @@ Instead of preemptive scheduling with fixed time slices, the Loom of Fate:
 - Throttles (soothes) greedy processes instead of killing them
 - Rewards cooperative yielding behavior
 
-### 2. Capability-Based Memory
+### 2. Two-Tier Memory Architecture
 
-User-space processes never see raw memory addresses:
-- All memory access is through opaque handles
-- Capabilities grant specific rights (read, write, execute, transfer)
-- MMU enforces boundaries at hardware level
-- Automatic deallocation when last handle is released
+The Mana Pool uses purpose-driven allocation pools:
+
+**Sanctuary Pool (Persistent):**
+- Kernel data structures with long lifetimes
+- Thread control blocks, scheduler state
+- Stable, rarely deallocated
+
+**Ephemeral Pool (Temporary):**
+- Short-lived allocations
+- I/O buffers, temporary calculations
+- Frequently allocated and freed
+
+**Buddy Allocator:**
+- Block sizes: 64B, 128B, 256B, 512B, 1KB, 2KB, 4KB, 8KB, 16KB, 32KB, 64KB
+- O(log n) allocation and deallocation
+- Efficient splitting and coalescing to reduce fragmentation
+- Real-time statistics: `mana-flow` command shows per-pool usage with progress bars
+
+**Future:** Capability-based handles for userspace (preventing raw pointer access)
 
 ### 3. Query-Based Filesystem
 
@@ -222,10 +239,17 @@ AethelOS now boots successfully with a working interactive shell! This milestone
 - Interactive shell prompt accepting input
 - Serial port logging for debugging
 
-**Memory Management:**
-- Bump allocator for kernel heap
-- Per-thread stack allocation (16KB stacks)
-- IRQ-safe mutex implementation
+**Memory Management (Mana Pool):**
+- **Buddy Allocator**: 64B to 64KB blocks with O(log n) performance
+- **Sanctuary Pool**: Persistent kernel allocations (~2MB default)
+- **Ephemeral Pool**: Temporary allocations (~2MB default)
+- **InterruptSafeLock**: Interrupt-safe synchronization for allocator access
+- **Per-thread stacks**: 16KB stacks with proper 16-byte alignment
+- **Object Manager**: Capability tracking infrastructure (foundation laid)
+- **mana-flow command**: Real-time memory monitoring with:
+  - Per-pool breakdown (Sanctuary vs Ephemeral)
+  - Visual progress bars for memory usage
+  - Total/used/free statistics for each pool
 
 ### 🚧 Partially Implemented
 
@@ -237,17 +261,29 @@ AethelOS now boots successfully with a working interactive shell! This milestone
 ### ❌ Not Yet Implemented
 
 - **Nexus (IPC)**: Message passing between threads/processes
-- **Mana Pool**: Capability-based memory management
+- **Capability-based userspace memory**: Opaque handles instead of raw pointers
 - **World-Tree Grove**: Query-based filesystem
 - **The Weave**: Vector graphics compositor
 - **Network Sprite**: Network stack
 - User-space processes (currently only kernel threads)
-- Virtual memory management (MMU)
-- Most device drivers
+- Virtual memory management (MMU/paging)
+- Most device drivers (only keyboard, VGA, serial, timer currently)
 
 ### Recent Milestones
 
 **January 2025:**
+- ✅ **Code Quality**: Achieved zero compiler warnings (58 → 0)
+  - Fixed all Rust 2024 static mut references (17 instances)
+  - Eliminated undefined behavior and FFI safety issues
+  - 100% compliance with modern Rust standards
+- ✅ **Mana Pool Implementation**: Two-tier buddy allocator
+  - Sanctuary and Ephemeral pools for purpose-driven allocation
+  - Interrupt-safe locking with `InterruptSafeLock`
+  - Enhanced `mana-flow` command with per-pool visualization
+- ✅ **Shell Enhancements**: Interactive Eldarin shell working
+  - Command history with up/down arrows
+  - Backspace support and cursor positioning
+  - Multiple thematic commands (`mana-flow`, `uptime`, `rest`)
 - ✅ First successful boot with shell prompt
 - ✅ Fixed critical timer interrupt deadlock (removed preemption)
 - ✅ Implemented proper x86-64 stack alignment (16n-8)
