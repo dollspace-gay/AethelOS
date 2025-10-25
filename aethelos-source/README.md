@@ -106,40 +106,39 @@ aethelos-source/
     └── script/              # Shell API
 ```
 
-## Building
+## Building and Running
 
 ### Prerequisites
 
-- Rust 1.75 or later
-- NASM (for boot.asm)
-- QEMU (for testing)
+- **Rust nightly** (for unstable features)
+- **GRUB** and **grub-mkrescue** (for creating bootable ISO)
+- **QEMU** (for testing)
+- **WSL** or Linux environment (for ISO creation)
 
 ### Build Commands
 
 ```bash
-# Build the entire workspace
-cargo build --release
-
-# Build just the kernel
+# Build the kernel (from heartwood directory)
 cd heartwood
-cargo build --release
+cargo build --bin heartwood --target x86_64-aethelos.json
 
-# Build a specific Grove
-cd groves/world-tree_grove
-cargo build --release
-```
-
-### Running in QEMU
-
-```bash
-# Assemble the bootloader
-nasm -f bin awakening/boot.asm -o boot.bin
-
-# Create a bootable disk image
-# (Additional steps would be needed for a complete bootable image)
+# Create bootable ISO (from aethelos-source root)
+cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin
+grub-mkrescue -o aethelos.iso isodir
 
 # Run in QEMU
-qemu-system-x86_64 -drive format=raw,file=boot.bin
+qemu-system-x86_64 -cdrom aethelos.iso -serial file:serial.log -m 256M
+```
+
+### Windows Build Script
+
+```cmd
+@echo off
+cd heartwood
+cargo build --bin heartwood --target x86_64-aethelos.json
+cd ..
+wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir"
+"C:\Program Files\qemu\qemu-system-x86_64.exe" -cdrom aethelos.iso -m 256M
 ```
 
 ## Key Innovations
@@ -193,25 +192,67 @@ The Weave renders everything mathematically:
 
 ## Current Status
 
-**Version 0.1.0-alpha** - "The First Breath"
+**Version 0.1.0-alpha** - "The First Awakening"
 
-This is a foundational implementation demonstrating the core architecture and philosophy. Currently implemented:
+AethelOS now boots successfully with a working interactive shell! This milestone demonstrates core multitasking and I/O capabilities.
 
-✅ Complete architectural design
-✅ Heartwood kernel structure (Nexus, Loom of Fate, Mana Pool, Attunement)
-✅ All Grove services (stubs)
-✅ Ancient Runes libraries (basic implementations)
-✅ Boot sequence design
+### ✅ Currently Working
 
-### Not Yet Implemented
+**Boot & Initialization:**
+- Multiboot2 bootloader integration with GRUB
+- VGA text mode initialization (80x25, Code Page 437)
+- Serial port debugging output
+- IDT (Interrupt Descriptor Table) setup
+- PIC (Programmable Interrupt Controller) initialization
+- GDT (Global Descriptor Table) configuration
 
-- Actual hardware initialization
-- Real memory allocator (currently using placeholder bump allocator)
-- Complete interrupt handling
-- Physical device drivers
-- Full filesystem implementation
-- Graphics rendering pipeline
-- Network stack
+**Threading & Scheduling:**
+- Thread creation and management (Loom of Fate)
+- Cooperative multitasking (threads yield voluntarily)
+- Context switching with proper stack alignment
+- Three system threads running:
+  - **Idle Thread**: Low-priority background thread
+  - **Keyboard Thread**: Processes keyboard input
+  - **Shell Thread**: Interactive command prompt (Eldarin)
+- Thread-safe spinlocks with interrupt management
+
+**I/O Systems:**
+- Keyboard interrupt handler (scancode processing)
+- VGA text output with cursor control
+- Interactive shell prompt accepting input
+- Serial port logging for debugging
+
+**Memory Management:**
+- Bump allocator for kernel heap
+- Per-thread stack allocation (16KB stacks)
+- IRQ-safe mutex implementation
+
+### 🚧 Partially Implemented
+
+- Basic keyboard input (no full scancode translation yet)
+- Shell framework (command parsing not yet implemented)
+- Harmony-based scheduling metrics (calculated but not yet used)
+- Thread priority system (defined but not affecting scheduling)
+
+### ❌ Not Yet Implemented
+
+- **Nexus (IPC)**: Message passing between threads/processes
+- **Mana Pool**: Capability-based memory management
+- **World-Tree Grove**: Query-based filesystem
+- **The Weave**: Vector graphics compositor
+- **Network Sprite**: Network stack
+- User-space processes (currently only kernel threads)
+- Virtual memory management (MMU)
+- Most device drivers
+
+### Recent Milestones
+
+**January 2025:**
+- ✅ First successful boot with shell prompt
+- ✅ Fixed critical timer interrupt deadlock (removed preemption)
+- ✅ Implemented proper x86-64 stack alignment (16n-8)
+- ✅ IRQ-safe mutex with proper lock release
+- ✅ Cooperative multitasking working correctly
 
 ## Why AethelOS?
 
