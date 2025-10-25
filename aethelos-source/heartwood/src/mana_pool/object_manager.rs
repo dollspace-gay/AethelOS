@@ -20,6 +20,8 @@ pub enum ObjectType {
 
 /// An object in the Mana Pool
 struct Object {
+    /// Object handle - kept for future reverse lookups and debugging
+    #[allow(dead_code)]
     pub(super) handle: ObjectHandle,
     pub(super) object_type: ObjectType,
     pub(super) address: usize,

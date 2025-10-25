@@ -54,9 +54,9 @@ impl Scheduler {
 
         // Pre-allocate capacity to prevent reallocation during push
         // This avoids memory overlap between Vec storage and stack allocations
-        let mut threads = Vec::with_capacity(16);
+        let threads = Vec::with_capacity(16);
         unsafe { serial_out(b'b'); } // threads Vec created
-        let mut stacks = Vec::with_capacity(16);
+        let stacks = Vec::with_capacity(16);
         unsafe { serial_out(b'c'); } // stacks Vec created
         let ready_queue = VecDeque::new();
         unsafe { serial_out(b'd'); } // ready_queue created
@@ -250,6 +250,11 @@ impl Scheduler {
     ///
     /// # Safety
     /// Assumes both thread IDs are valid and the threads exist
+    ///
+    /// Note: This is an old implementation from preemptive scheduling experiments.
+    /// The system now uses a different approach (cooperative + interrupt-based).
+    /// Kept as reference for alternative scheduling strategies.
+    #[allow(dead_code)]
     fn perform_context_switch(&mut self, from_id: ThreadId, to_id: ThreadId) {
         // Get raw pointers to the contexts before borrowing
         let from_idx = self.threads.iter().position(|t| t.id() == from_id).unwrap();
@@ -276,6 +281,11 @@ impl Scheduler {
     ///
     /// # Safety
     /// This function never returns normally - it restores the thread's context
+    ///
+    /// Note: Old implementation from preemptive scheduling experiments.
+    /// Current system uses context::context_switch_first() instead.
+    /// Kept as reference for alternative boot strategies.
+    #[allow(dead_code)]
     fn restore_first_thread(&mut self, to_id: ThreadId) -> ! {
         // Find the thread's context
         let to_idx = self.threads.iter().position(|t| t.id() == to_id).unwrap();

@@ -35,7 +35,7 @@ pub fn init() {
     unsafe {
         let keyboard = Keyboard::new();
         let lock = InterruptSafeLock::new(keyboard);
-        core::ptr::write(KEYBOARD.as_mut_ptr(), lock);
+        core::ptr::write(core::ptr::addr_of_mut!(KEYBOARD).cast(), lock);
         KEYBOARD_INITIALIZED = true;
     }
 }
@@ -47,7 +47,7 @@ pub fn on_interrupt() {
             return;
         }
 
-        let mut keyboard = (*KEYBOARD.as_ptr()).lock();
+        let mut keyboard = (*core::ptr::addr_of!(KEYBOARD).cast::<InterruptSafeLock<Keyboard>>()).lock();
         let scancode = keyboard.read_scancode();
 
         // Ignore key release events (scancode >= 0x80)

@@ -242,11 +242,11 @@ pub fn initialize() {
 
         // Wrap in IRQ-safe mutex and write to static
         let mutex = IrqSafeMutex::new(writer);
-        core::ptr::write(WRITER.as_mut_ptr(), mutex);
+        core::ptr::write(core::ptr::addr_of_mut!(WRITER).cast(), mutex);
         WRITER_INITIALIZED = true;
 
         // Clear the screen
-        let mut writer = WRITER.assume_init_mut().lock();
+        let mut writer = (*core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>()).lock();
         for row in 0..BUFFER_HEIGHT {
             writer.clear_row(row);
         }
@@ -258,7 +258,7 @@ pub fn initialize() {
 
 /// Get reference to WRITER (assumes initialized)
 unsafe fn get_writer() -> &'static IrqSafeMutex<Writer> {
-    WRITER.assume_init_ref()
+    &*core::ptr::addr_of!(WRITER).cast::<IrqSafeMutex<Writer>>()
 }
 
 /// Force unlock the VGA writer (for use before context switches)
@@ -268,7 +268,7 @@ unsafe fn get_writer() -> &'static IrqSafeMutex<Writer> {
 /// no other code will try to use the lock.
 pub unsafe fn force_unlock() {
     if WRITER_INITIALIZED {
-        let writer = WRITER.assume_init_mut();
+        let writer = &mut *core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>();
         writer.force_unlock();
     }
 }
@@ -282,7 +282,7 @@ pub unsafe fn write_char_unlocked(ch: char) {
     }
 
     // Get raw pointer to the writer inside the IRQ-safe mutex
-    let writer_ptr = WRITER.as_ptr() as *mut IrqSafeMutex<Writer>;
+    let writer_ptr = core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>();
     // Access the inner Mutex to get the data (unsafe pointer dereference)
     let inner_mutex = &mut (*writer_ptr).inner;
     let writer = inner_mutex.get_mut();
@@ -391,60 +391,4 @@ pub fn _print(args: fmt::Arguments) {
             serial_out(b'U'); // Uninitialized!
         }
     }
-}
-
-/// Execute a closure with interrupts disabled
-/// This prevents deadlocks when acquiring locks that might be used in interrupt handlers
-fn without_interrupts<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    // Check if interrupts are currently enabled
-    let were_enabled: bool;
-    unsafe {
-        let flags: u64;
-        core::arch::asm!(
-            "pushfq",
-            "pop {0}",
-            out(reg) flags,
-            options(nomem, preserves_flags)
-        );
-        were_enabled = (flags & 0x200) != 0;
-    }
-
-    // Disable interrupts
-    unsafe {
-        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
-    }
-
-    // Execute the closure
-    let result = f();
-
-    // Only re-enable if they were enabled before
-    // This prevents re-enabling interrupts during early boot
-    if were_enabled {
-        unsafe {
-            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
-
-            // Debug: output to serial that we re-enabled interrupts
-            core::arch::asm!(
-                "mov dx, 0x3f8",
-                "mov al, 0x2B",  // '+' = re-enabled
-                "out dx, al",
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-    } else {
-        unsafe {
-            // Debug: output that we DIDN'T re-enable
-            core::arch::asm!(
-                "mov dx, 0x3f8",
-                "mov al, 0x2D",  // '-' = stayed disabled
-                "out dx, al",
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-    }
-
-    result
 }

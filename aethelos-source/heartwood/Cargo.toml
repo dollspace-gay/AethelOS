@@ -21,9 +21,3 @@ crate-type = ["staticlib", "rlib"]
 [[bin]]
 name = "heartwood"
 path = "src/main.rs"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"

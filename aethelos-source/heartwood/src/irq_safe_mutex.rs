@@ -18,7 +18,7 @@ impl<T> IrqSafeMutex<T> {
         }
     }
 
-    pub fn lock(&self) -> IrqSafeMutexGuard<T> {
+    pub fn lock(&self) -> IrqSafeMutexGuard<'_, T> {
         // Check if interrupts are currently enabled
         let were_enabled: bool;
         unsafe {

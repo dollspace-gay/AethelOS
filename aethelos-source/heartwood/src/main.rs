@@ -15,7 +15,7 @@
 extern crate alloc;
 
 // Reference the modules from lib.rs
-use heartwood::{nexus, loom_of_fate, mana_pool, attunement, vga_buffer};
+use heartwood::{nexus, loom_of_fate, mana_pool, attunement};
 
 // Need to use macros with #[macro_use]
 #[macro_use]
@@ -101,7 +101,11 @@ pub extern "C" fn _start() -> ! {
     }
 
     // UNREACHABLE - the bootstrap ghost is gone
-    unreachable!("The Great Hand-Off should never return")
+    // This is intentional defensive programming to document the expected behavior
+    #[allow(unreachable_code)]
+    {
+        unreachable!("The Great Hand-Off should never return")
+    }
 }
 
 /// Initialize the Heartwood's core systems

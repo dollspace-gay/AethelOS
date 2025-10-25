@@ -7,7 +7,6 @@ use core::arch::global_asm;
 
 global_asm!(
     r#"
-    .intel_syntax noprefix
     .section .boot.text, "awx"
     .code32
     .globl boot32_start

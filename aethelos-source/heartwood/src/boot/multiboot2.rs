@@ -8,8 +8,6 @@
 //! This is the handshake between bootloader and kernel - the first
 //! moment of trust between two systems working together.
 
-use core::arch::global_asm;
-
 /// Multiboot2 magic number
 /// Bootloaders look for this to identify our kernel
 pub const MULTIBOOT2_MAGIC: u32 = 0xE85250D6;

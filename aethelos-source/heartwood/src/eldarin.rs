@@ -9,7 +9,6 @@
 //! The shell does not merely execute - it interprets, validates, and responds
 //! with both action and wisdom.
 
-use core::fmt::Write;
 use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
 
@@ -191,24 +190,24 @@ pub fn init() {
     unsafe {
         let buffer = CommandBuffer::new();
         let lock = InterruptSafeLock::new(buffer);
-        core::ptr::write(COMMAND_BUFFER.as_mut_ptr(), lock);
+        core::ptr::write(core::ptr::addr_of_mut!(COMMAND_BUFFER).cast(), lock);
         BUFFER_INITIALIZED = true;
 
         let history = CommandHistory::new();
         let history_lock = InterruptSafeLock::new(history);
-        core::ptr::write(COMMAND_HISTORY.as_mut_ptr(), history_lock);
+        core::ptr::write(core::ptr::addr_of_mut!(COMMAND_HISTORY).cast(), history_lock);
         HISTORY_INITIALIZED = true;
     }
 }
 
 /// Get reference to command buffer
 unsafe fn get_buffer() -> &'static InterruptSafeLock<CommandBuffer> {
-    COMMAND_BUFFER.assume_init_ref()
+    &*core::ptr::addr_of!(COMMAND_BUFFER).cast::<InterruptSafeLock<CommandBuffer>>()
 }
 
 /// Get reference to command history
 unsafe fn get_history() -> &'static InterruptSafeLock<CommandHistory> {
-    COMMAND_HISTORY.assume_init_ref()
+    &*core::ptr::addr_of!(COMMAND_HISTORY).cast::<InterruptSafeLock<CommandHistory>>()
 }
 
 /// Handle a character from keyboard input
@@ -328,7 +327,7 @@ pub fn poll() {
             let has_newline = buffer.as_str().contains('\n');
             if has_newline {
                 // Debug: we found a newline!
-                let mut port = 0x3f8u16;
+                let port = 0x3f8u16;
                 core::arch::asm!(
                     "out dx, al",
                     in("dx") port,
@@ -382,7 +381,7 @@ pub fn poll() {
 pub fn display_prompt() {
     // Debug: signal that we're about to print prompt
     unsafe {
-        let mut port = 0x3f8u16;
+        let port = 0x3f8u16;
         core::arch::asm!(
             "out dx, al",
             in("dx") port,
@@ -592,12 +591,64 @@ fn cmd_mana_flow() {
         0
     };
 
-    // Draw a beautiful progress bar
-    crate::println!("  Total Essence: {} KB", total_kb);
-    crate::println!();
-    crate::print!("  [");
+    // Sanctuary Pool (Persistent Memory)
+    crate::println!("  Sanctuary Pool (Persistent):");
+    crate::println!("    Total: {} KB", sanctuary_total_kb);
+    crate::println!("    Used:  {} KB", sanctuary_used_kb);
+    crate::println!("    Free:  {} KB", sanctuary_free_kb);
 
-    let bar_width = 50;
+    // Draw sanctuary progress bar
+    let sanctuary_percent = if stats.sanctuary_total > 0 {
+        (stats.sanctuary_used * 100) / stats.sanctuary_total
+    } else {
+        0
+    };
+    crate::print!("    [");
+    let bar_width = 40;
+    let filled = (sanctuary_percent as usize * bar_width) / 100;
+    for i in 0..bar_width {
+        if i < filled {
+            crate::print!("█");
+        } else {
+            crate::print!("░");
+        }
+    }
+    crate::println!("] {}%", sanctuary_percent);
+    crate::println!();
+
+    // Ephemeral Pool (Temporary Memory)
+    crate::println!("  Ephemeral Mist (Temporary):");
+    crate::println!("    Total: {} KB", ephemeral_total_kb);
+    crate::println!("    Used:  {} KB", ephemeral_used_kb);
+    crate::println!("    Free:  {} KB", ephemeral_free_kb);
+
+    // Draw ephemeral progress bar
+    let ephemeral_percent = if stats.ephemeral_total > 0 {
+        (stats.ephemeral_used * 100) / stats.ephemeral_total
+    } else {
+        0
+    };
+    crate::print!("    [");
+    let filled = (ephemeral_percent as usize * bar_width) / 100;
+    for i in 0..bar_width {
+        if i < filled {
+            crate::print!("█");
+        } else {
+            crate::print!("░");
+        }
+    }
+    crate::println!("] {}%", ephemeral_percent);
+    crate::println!();
+
+    // Overall Summary
+    crate::println!("  Overall Summary:");
+    crate::println!("    Total: {} KB", total_kb);
+    crate::println!("    Used:  {} KB", used_kb);
+    crate::println!("    Free:  {} KB", free_kb);
+
+    // Draw total progress bar
+    crate::print!("    [");
+    let bar_width = 40;
     let filled = (used_percent as usize * bar_width) / 100;
     for i in 0..bar_width {
         if i < filled {
@@ -607,18 +658,6 @@ fn cmd_mana_flow() {
         }
     }
     crate::println!("] {}%", used_percent);
-    crate::println!();
-
-    crate::println!("  Sustenance (Used):     {} KB", used_kb);
-    crate::println!("  Free Flow (Available): {} KB", free_kb);
-    crate::println!();
-
-    crate::println!("  Sanctuary (Long-lived):");
-    crate::println!("    Used: {} KB / {} KB", sanctuary_used_kb, sanctuary_total_kb);
-    crate::println!();
-
-    crate::println!("  Ephemeral Mist (Short-lived):");
-    crate::println!("    Used: {} KB / {} KB", ephemeral_used_kb, ephemeral_total_kb);
     crate::println!();
 
     crate::println!("  Total Objects: {}", stats.total_objects);

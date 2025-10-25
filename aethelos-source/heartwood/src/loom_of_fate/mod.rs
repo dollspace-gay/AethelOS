@@ -69,7 +69,7 @@ pub fn init() {
         serial_out(b'D'); // InterruptSafeLock created
 
         // Write the small InterruptSafeLock<Box<Scheduler>> to static
-        core::ptr::write(LOOM.as_mut_ptr(), lock);
+        core::ptr::write(core::ptr::addr_of_mut!(LOOM).cast(), lock);
         serial_out(b'y'); // Written to MaybeUninit
 
         LOOM_INITIALIZED = true;
@@ -110,7 +110,7 @@ pub fn init() {
 /// # Safety
 /// LOOM must be initialized before calling this function
 pub unsafe fn get_loom() -> &'static InterruptSafeLock<Box<Scheduler>> {
-    LOOM.assume_init_ref()
+    &*core::ptr::addr_of!(LOOM).cast::<InterruptSafeLock<Box<Scheduler>>>()
 }
 
 /// Spawn a new thread

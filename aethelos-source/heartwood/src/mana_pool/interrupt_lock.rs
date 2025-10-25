@@ -33,7 +33,7 @@ impl<T> InterruptSafeLock<T> {
     }
 
     /// Acquire the lock, returning a guard that restores interrupt state on drop
-    pub fn lock(&self) -> InterruptSafeLockGuard<T> {
+    pub fn lock(&self) -> InterruptSafeLockGuard<'_, T> {
         // Save current interrupt state
         let interrupts_enabled = are_interrupts_enabled();
 

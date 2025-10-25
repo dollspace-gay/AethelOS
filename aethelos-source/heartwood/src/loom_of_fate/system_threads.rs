@@ -10,7 +10,7 @@
 //! The keyboard thread listens attentively to user intentions.
 //! The shell thread translates human wishes into system actions.
 
-use super::{ThreadPriority, yield_now};
+use super::yield_now;
 
 /// The Idle Thread - The First Awakening
 ///
@@ -32,7 +32,7 @@ pub fn idle_thread() -> ! {
 
     // DEBUG: Silent marker that we've awakened
     unsafe {
-        let mut port = 0x3f8u16;
+        let port = 0x3f8u16;
         core::arch::asm!(
             "out dx, al",
             in("dx") port,
@@ -65,7 +65,7 @@ pub fn idle_thread() -> ! {
 
     // DEBUG: Interrupts enabled
     unsafe {
-        let mut port = 0x3f8u16;
+        let port = 0x3f8u16;
         core::arch::asm!(
             "out dx, al",
             in("dx") port,
@@ -191,7 +191,7 @@ pub fn shell_thread() -> ! {
         );
         let interrupts_enabled = (flags & 0x200) != 0;
 
-        let mut port = 0x3f8u16;
+        let port = 0x3f8u16;
         core::arch::asm!(
             "out dx, al",
             in("dx") port,

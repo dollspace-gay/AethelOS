@@ -210,7 +210,7 @@ impl BuddyAllocator {
     /// unused parts to the appropriate free lists
     fn split_block(&mut self, block: NonNull<Block>, current_order: usize, target_order: usize) {
         let mut order = current_order;
-        let mut addr = block.as_ptr() as usize;
+        let addr = block.as_ptr() as usize;
 
         while order > target_order {
             order -= 1;

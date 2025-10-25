@@ -174,7 +174,7 @@ pub fn init() {
         let lock = InterruptSafeLock::new(mana_pool_on_heap);
         serial_out(b'Q'); // After InterruptSafeLock::new
 
-        core::ptr::write(MANA_POOL.as_mut_ptr(), lock);
+        core::ptr::write(core::ptr::addr_of_mut!(MANA_POOL).cast(), lock);
         serial_out(b'R'); // Written to static
 
         MANA_POOL_INITIALIZED = true;
@@ -184,7 +184,7 @@ pub fn init() {
 
 /// Get reference to MANA_POOL (assumes initialized)
 unsafe fn get_mana_pool() -> &'static InterruptSafeLock<Box<ManaPool>> {
-    MANA_POOL.assume_init_ref()
+    &*core::ptr::addr_of!(MANA_POOL).cast::<InterruptSafeLock<Box<ManaPool>>>()
 }
 
 /// Allocate memory with a specific purpose

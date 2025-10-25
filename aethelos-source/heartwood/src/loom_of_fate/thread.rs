@@ -37,11 +37,18 @@ pub struct Thread {
     pub(crate) id: ThreadId,
     pub(crate) state: ThreadState,
     pub(crate) priority: ThreadPriority,
+
+    /// Entry point function - kept for debugging/inspection
+    #[allow(dead_code)]
     pub(crate) entry_point: fn() -> !,
 
     // CPU state (for context switching)
     pub(crate) context: ThreadContext,
+
+    /// Stack boundaries - kept for future stack overflow detection
+    #[allow(dead_code)]
     pub(crate) stack_bottom: u64,
+    #[allow(dead_code)]
     pub(crate) stack_top: u64,
 
     // Harmony tracking

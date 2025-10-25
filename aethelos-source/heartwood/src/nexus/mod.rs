@@ -52,7 +52,7 @@ pub fn init() {
         let lock = InterruptSafeLock::new(nexus_core);
         serial_out(b'u'); // After InterruptSafeLock::new
 
-        core::ptr::write(NEXUS.as_mut_ptr(), lock);
+        core::ptr::write(core::ptr::addr_of_mut!(NEXUS).cast(), lock);
         serial_out(b'!'); // Written to static
 
         NEXUS_INITIALIZED = true;
@@ -61,7 +61,7 @@ pub fn init() {
 
 /// Get reference to NEXUS (assumes initialized)
 unsafe fn get_nexus() -> &'static InterruptSafeLock<NexusCore> {
-    NEXUS.assume_init_ref()
+    &*core::ptr::addr_of!(NEXUS).cast::<InterruptSafeLock<NexusCore>>()
 }
 
 /// Send a message through the Nexus

@@ -436,7 +436,7 @@ pub unsafe extern "C" fn restore_context(_new_context: *const ThreadContext) -> 
 ///
 /// This function is called when a new thread is first scheduled.
 /// It handles any setup needed before calling the actual entry point.
-pub extern "C" fn thread_entry_wrapper(entry_point: fn() -> !) -> ! {
+pub extern "C" fn thread_entry_wrapper(entry_point: extern "C" fn() -> !) -> ! {
     // Enable interrupts for this new thread
     unsafe {
         asm!("sti", options(nomem, nostack));
