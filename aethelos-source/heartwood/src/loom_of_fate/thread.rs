@@ -73,6 +73,10 @@ impl Thread {
         // Create initial context for this thread
         let context = ThreadContext::new(entry_point as u64, stack_top);
 
+        // DEBUG: Verify context was created correctly
+        crate::println!("  Thread::new - id={}, entry={:#x}, stack_top={:#x}, context.rsp={:#x}",
+                       id.0, entry_point as u64, stack_top, context.rsp);
+
         Self {
             id,
             state: ThreadState::Resting,

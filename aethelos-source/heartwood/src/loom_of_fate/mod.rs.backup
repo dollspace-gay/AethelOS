@@ -114,94 +114,26 @@ pub fn spawn(entry_point: fn() -> !, priority: ThreadPriority) -> Result<ThreadI
     unsafe { get_loom().lock().spawn(entry_point, priority) }
 }
 
-/// Execute a closure with interrupts disabled
-/// This prevents deadlocks when acquiring locks that might be used in interrupt handlers
-fn without_interrupts<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    // Check if interrupts are currently enabled
-    let were_enabled: bool;
-    unsafe {
-        let flags: u64;
-        core::arch::asm!(
-            "pushfq",
-            "pop {0}",
-            out(reg) flags,
-            options(nomem, preserves_flags)
-        );
-        were_enabled = (flags & 0x200) != 0;
-    }
-
-    // Disable interrupts
-    if were_enabled {
-        unsafe {
-            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
-        }
-    }
-
-    // Execute the closure
-    let result = f();
-
-    // Re-enable interrupts if they were enabled before
-    if were_enabled {
-        unsafe {
-            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
-        }
-    }
-
-    result
-}
-
 /// Yield the current thread
 pub fn yield_now() {
-    // CRITICAL: Disable interrupts while holding the scheduler lock
-    // to prevent deadlock when timer interrupt fires during context switch
-    without_interrupts(|| {
-        unsafe {
-            // Step 1: Lock scheduler and prepare for context switch
-            let (should_switch, from_ctx_ptr, to_ctx_ptr) = {
-                let mut loom = get_loom().lock();
-
-                // Only yield if we actually have a current thread
-                if loom.current_thread_id().is_none() {
-                    return;
-                }
-
-                // Prepare for context switch and get pointers
-                loom.prepare_yield()
-            };
-
-            // Step 2: If we should switch, drop the lock and do the context switch
-            if should_switch {
-                // The lock is now dropped! (loom was dropped at end of block above)
-                serial_out(b'L'); // Lock dropped!
-                // Now we can safely context switch without holding any locks
-                serial_out(b'C'); // About to context switch
-                context::switch_context_cooperative(from_ctx_ptr, to_ctx_ptr);
-                serial_out(b'R'); // Returned from context switch
-
-                // When we return here, we're running as a different thread
-                // Re-lock and update state
-                let mut loom = get_loom().lock();
-                loom.after_yield();
-            }
+    unsafe {
+        let mut loom = get_loom().lock();
+        // Only yield if we actually have a current thread
+        // (prevents deadlock if timer interrupt fires before Great Hand-Off)
+        if loom.current_thread_id().is_some() {
+            loom.yield_current();
         }
-    });
+    }
 }
 
 /// Get the current thread ID
 pub fn current_thread() -> Option<ThreadId> {
-    without_interrupts(|| {
-        unsafe { get_loom().lock().current_thread_id() }
-    })
+    unsafe { get_loom().lock().current_thread_id() }
 }
 
 /// Get scheduler statistics
 pub fn stats() -> SchedulerStats {
-    without_interrupts(|| {
-        unsafe { get_loom().lock().stats() }
-    })
+    unsafe { get_loom().lock().stats() }
 }
 
 /// Get a pointer to the idle thread's context for the Great Hand-Off
@@ -228,7 +160,17 @@ pub unsafe fn get_idle_thread_context() -> *const context::ThreadContext {
 pub unsafe fn prepare_great_handoff() {
     let mut loom = get_loom().lock();
     let idle_thread_id = ThreadId(1);
-    loom.prepare_handoff(idle_thread_id);
+
+    // Remove idle thread from ready queue since it's about to become current
+    loom.ready_queue.retain(|&id| id != idle_thread_id);
+
+    // Set it as the current thread
+    loom.current_thread = Some(idle_thread_id);
+
+    // Mark it as Weaving (running)
+    if let Some(thread) = loom.find_thread_mut(idle_thread_id) {
+        thread.set_state(ThreadState::Weaving);
+    }
 }
 
 /// Begin multitasking - The Sacred First Weave (DEPRECATED)

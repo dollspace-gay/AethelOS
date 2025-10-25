@@ -9,8 +9,9 @@ rust-version.workspace = true
 spin = { workspace = true }
 bitflags = { workspace = true }
 lazy_static = { workspace = true }
+x86_64 = { workspace = true }
+pic8259 = { workspace = true }
 # volatile = { workspace = true }
-# x86_64 = { workspace = true } # Requires nightly Rust features
 # uart_16550 = { workspace = true }
 # bootloader = { workspace = true }
 

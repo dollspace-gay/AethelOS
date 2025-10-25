@@ -14,5 +14,6 @@
   "features": "",
   "code-model": "kernel",
   "relocation-model": "static",
-  "position-independent-executables": false
+  "position-independent-executables": false,
+  "static-position-independent-executables": false
 }

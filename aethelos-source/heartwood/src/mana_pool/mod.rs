@@ -27,11 +27,12 @@ pub use sanctuary::Sanctuary;
 pub use ephemeral_mist::EphemeralMist;
 
 use spin::Mutex;
-use lazy_static::lazy_static;
+use core::mem::MaybeUninit;
+use alloc::boxed::Box;
 
-lazy_static! {
-    static ref MANA_POOL: Mutex<ManaPool> = Mutex::new(ManaPool::new());
-}
+// MANA_POOL stores a Box<ManaPool> - a small pointer to heap-allocated ManaPool
+static mut MANA_POOL: MaybeUninit<Mutex<Box<ManaPool>>> = MaybeUninit::uninit();
+static mut MANA_POOL_INITIALIZED: bool = false;
 
 pub struct ManaPool {
     object_manager: ObjectManager,
@@ -51,6 +52,29 @@ impl ManaPool {
             object_manager: ObjectManager::new(),
             sanctuary: Sanctuary::new(),
             ephemeral_mist: EphemeralMist::new(),
+        }
+    }
+
+    /// Create a new ManaPool directly in a Box on the heap
+    /// This avoids stack overflow by never creating the ManaPool on the stack
+    pub fn new_boxed() -> alloc::boxed::Box<Self> {
+        unsafe { serial_out(b'a'); } // Starting boxed creation
+
+        // Allocate uninitialized box
+        let mut boxed: alloc::boxed::Box<core::mem::MaybeUninit<Self>> = alloc::boxed::Box::new_uninit();
+        unsafe { serial_out(b'b'); } // Box allocated
+
+        // Initialize fields directly in the box
+        unsafe {
+            let ptr: *mut ManaPool = boxed.as_mut_ptr();
+            core::ptr::write(&mut (*ptr).object_manager, ObjectManager::new());
+            serial_out(b'c');
+            core::ptr::write(&mut (*ptr).sanctuary, Sanctuary::new());
+            serial_out(b'd');
+            core::ptr::write(&mut (*ptr).ephemeral_mist, EphemeralMist::new());
+            serial_out(b'e');
+
+            boxed.assume_init()
         }
     }
 
@@ -120,32 +144,64 @@ impl ManaPool {
     }
 }
 
+/// Helper to write to serial for debugging
+unsafe fn serial_out(c: u8) {
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") 0x3f8u16,
+        in("al") c,
+        options(nomem, nostack, preserves_flags)
+    );
+}
+
 /// Initialize the Mana Pool
 pub fn init() {
-    // Initialization happens on first access via lazy_static
-    let _ = MANA_POOL.lock();
+    unsafe {
+        serial_out(b'M'); // Mana pool init started
+
+        // Use new_boxed() to create ManaPool directly on heap (in-place)
+        serial_out(b'N'); // About to call ManaPool::new_boxed
+        let mana_pool_on_heap = ManaPool::new_boxed();
+        serial_out(b'O'); // ManaPool::new_boxed returned
+
+        // Create mutex and write to static
+        serial_out(b'P'); // Before Mutex::new
+        let mutex = Mutex::new(mana_pool_on_heap);
+        serial_out(b'Q'); // After Mutex::new
+
+        core::ptr::write(MANA_POOL.as_mut_ptr(), mutex);
+        serial_out(b'R'); // Written to static
+
+        MANA_POOL_INITIALIZED = true;
+        serial_out(b'S'); // Marked as initialized
+    }
+}
+
+/// Get reference to MANA_POOL (assumes initialized)
+unsafe fn get_mana_pool() -> &'static Mutex<Box<ManaPool>> {
+    MANA_POOL.assume_init_ref()
 }
 
 /// Allocate memory with a specific purpose
 /// Returns a capability with full rights to the newly created object
 pub fn animate(size: usize, purpose: AllocationPurpose) -> Result<Capability, ManaError> {
-    MANA_POOL.lock().animate(size, purpose)
+    unsafe { get_mana_pool().lock().animate(size, purpose) }
 }
 
 /// Release memory back to the pool
 /// Requires a valid capability
 pub fn release(capability: &Capability) -> Result<(), ManaError> {
-    MANA_POOL.lock().release(capability)
+    unsafe { get_mana_pool().lock().release(capability) }
 }
 
 /// Validate a capability
 pub fn validate_capability(capability: &Capability) -> bool {
-    MANA_POOL.lock().validate_capability(capability)
+    unsafe { get_mana_pool().lock().validate_capability(capability) }
 }
 
 /// Clone a capability (requires TRANSFER rights)
 pub fn clone_capability(capability: &Capability) -> Result<Capability, ManaError> {
-    MANA_POOL.lock().clone_capability(capability)
+    unsafe { get_mana_pool().lock().clone_capability(capability) }
 }
 
 /// Derive a new capability with restricted rights
@@ -153,22 +209,22 @@ pub fn derive_capability(
     capability: &Capability,
     new_rights: CapabilityRights,
 ) -> Result<Capability, ManaError> {
-    MANA_POOL.lock().derive_capability(capability, new_rights)
+    unsafe { get_mana_pool().lock().derive_capability(capability, new_rights) }
 }
 
 /// Access object data through a capability
 pub fn access_object(capability: &Capability) -> Result<(usize, usize), ManaError> {
-    MANA_POOL.lock().access_object(capability)
+    unsafe { get_mana_pool().lock().access_object(capability) }
 }
 
 /// Get object information through a capability
 pub fn get_object_info(capability: &Capability) -> Result<ObjectInfo, ManaError> {
-    MANA_POOL.lock().get_object_info(capability)
+    unsafe { get_mana_pool().lock().get_object_info(capability) }
 }
 
 /// Get Mana Pool statistics
 pub fn stats() -> ManaPoolStats {
-    MANA_POOL.lock().stats()
+    unsafe { get_mana_pool().lock().stats() }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

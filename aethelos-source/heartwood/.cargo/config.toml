@@ -5,8 +5,15 @@
 [target.x86_64-aethelos]
 # Use LLD as the linker with our linker script
 rustflags = [
-    "-C", "link-arg=-no-pie",
+    "-C", "link-arg=-nostdlib",
+    "-C", "link-arg=--no-pie",
+    "-C", "link-arg=-static",
+    "-C", "link-arg=--no-dynamic-linker",
+    "-C", "link-arg=-n",  # --nmagic: Don't page-align file offsets
+    "-C", "link-arg=-z",
+    "-C", "link-arg=max-page-size=0x1000",
     "-C", "link-arg=-TF:/OS/aethelos-source/heartwood/linker.ld",
+    "-C", "relocation-model=static",
 ]
 
 [unstable]

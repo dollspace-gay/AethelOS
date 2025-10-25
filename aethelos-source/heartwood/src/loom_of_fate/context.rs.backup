@@ -272,22 +272,23 @@ pub unsafe extern "C" fn context_switch_first(_new_context: *const ThreadContext
         // The Scroll of Truth has revealed the sacred offsets:
         // rip offset: 0x78, cs: 0x80, rflags: 0x88, rsp: 0x90, ss: 0x98
 
-        // Simplified approach: Just set up RSP and jump
-        // Since we're in ring 0 and staying in ring 0, we don't need IRETQ
+        // SIMPLIFIED APPROACH: Since we're staying in ring 0, we don't need IRETQ
+        // Just set up the stack pointer, enable interrupts, and jump to the entry point
 
-        // Load the entry point into RAX before modifying other registers
+        // Load the entry point address into RAX (we'll jump to it)
         "mov rax, [rdi + 0x78]",  // Load RIP (entry point)
 
-        // Load the stack pointer
+        // Load the new stack pointer
         "mov rsp, [rdi + 0x90]",  // Load RSP
 
-        // Clear base pointer (indicates top of call stack)
+        // Clear the base pointer (indicates top of call stack)
         "xor rbp, rbp",
 
         // Enable interrupts
         "sti",
 
         // Jump to the entry point
+        // The entry point is fn() -> ! so it never returns
         "jmp rax",
     );
 }

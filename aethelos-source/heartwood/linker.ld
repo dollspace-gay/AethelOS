@@ -1,68 +1,81 @@
-/* Linker script for AethelOS Heartwood kernel */
+/* The Unbreakable Binding - Ultimate Linker Script for AethelOS */
+ENTRY(boot32_start)
 
-ENTRY(_start)
+PHDRS
+{
+    text PT_LOAD FLAGS(7);  /* 7 = Read + Write + Execute */
+}
 
-/* Define the memory layout */
 SECTIONS
 {
-    /* The kernel starts at 1MB (0x100000) - standard for higher-half kernels */
+    /* Start at 1 MiB - standard for multiboot kernels */
     . = 1M;
 
-    /* Multiboot2 header MUST be in the first 32KB and 8-byte aligned */
-    .boot : ALIGN(8)
+    /* Multiboot2 header MUST be at file offset 0 for GRUB to find it */
+    /* VMA = 1M (where it runs), LMA = 0x100000 (where GRUB loads it) */
+    .boot ALIGN(8) : AT(1M)
     {
-        /* Multiboot header must be first */
         KEEP(*(.multiboot))
-        . = ALIGN(8);
-    }
+        KEEP(*(.boot))
+    } :text
 
-    /* Code section immediately follows */
+    /* 32-bit bootstrap code immediately follows */
+    .boot.text ALIGN(4) : AT(1M + SIZEOF(.boot))
+    {
+        *(.boot.text)
+    } :text
+
+    /* Main executable code */
     .text ALIGN(4K) : AT(ADDR(.text))
     {
         *(.text .text.*)
-    }
+    } :text
 
     /* Read-only data */
     .rodata ALIGN(4K) : AT(ADDR(.rodata))
     {
         *(.rodata .rodata.*)
-    }
+    } :text
 
     /* Initialized data */
     .data ALIGN(4K) : AT(ADDR(.data))
     {
         *(.data .data.*)
-    }
+    } :text
 
-    /* Uninitialized data (BSS) */
+    /* Uninitialized data */
     .bss ALIGN(4K) : AT(ADDR(.bss))
     {
-        *(COMMON)
         *(.bss .bss.*)
-    }
+        *(COMMON)
+    } :text
 
     /* Thread-local storage */
     .tdata ALIGN(4K) : AT(ADDR(.tdata))
     {
         *(.tdata .tdata.*)
-    }
+    } :text
 
     .tbss ALIGN(4K) : AT(ADDR(.tbss))
     {
         *(.tbss .tbss.*)
-    }
+    } :text
 
-    /* Debug sections */
-    .debug_info     0 : { *(.debug_info) }
-    .debug_abbrev   0 : { *(.debug_abbrev) }
-    .debug_line     0 : { *(.debug_line) }
-    .debug_str      0 : { *(.debug_str) }
-    .debug_ranges   0 : { *(.debug_ranges) }
+    /* Exception handling frame - needed but can be at end */
+    .eh_frame_hdr ALIGN(4) : AT(ADDR(.eh_frame_hdr))
+    {
+        *(.eh_frame_hdr)
+    } :text
 
-    /* Discard unnecessary sections */
-    /DISCARD/ :
+    .eh_frame ALIGN(4) : AT(ADDR(.eh_frame))
     {
         *(.eh_frame)
+    } :text
+
+    /* Discard sections we don't need */
+    /DISCARD/ :
+    {
+        *(.comment)
         *(.note .note.*)
     }
 }

@@ -88,26 +88,42 @@ impl EndTag {
     }
 }
 
-/// Framebuffer tag - request a framebuffer
+/// Entry address tag - tells bootloader where to jump
 #[repr(C, align(8))]
-pub struct FramebufferTag {
+pub struct EntryAddressTag {
     tag_type: u16,
     flags: u16,
     size: u32,
-    width: u32,
-    height: u32,
-    depth: u32,
+    entry_addr: u32,
 }
 
-impl FramebufferTag {
-    pub const fn new(width: u32, height: u32, depth: u32) -> Self {
+impl EntryAddressTag {
+    pub const fn new(entry_addr: u32) -> Self {
         Self {
-            tag_type: TagType::Framebuffer as u16,
-            flags: 0, // Optional
-            size: 20, // Size of this tag
-            width,
-            height,
-            depth,
+            tag_type: TagType::EntryAddress as u16,
+            flags: 0,
+            size: 12, // Size of this tag (8 bytes header + 4 bytes address)
+            entry_addr,
+        }
+    }
+}
+
+/// Console Flags Tag - request EGA text console
+#[repr(C, align(8))]
+pub struct ConsoleTag {
+    tag_type: u16,
+    flags: u16,
+    size: u32,
+    console_flags: u32,
+}
+
+impl ConsoleTag {
+    pub const fn new() -> Self {
+        Self {
+            tag_type: 4,  // Console flags tag type
+            flags: 0,     // Optional request
+            size: 12,     // Size of this tag
+            console_flags: 3,  // EGA_TEXT_SUPPORTED (bit 0) + REQUIRE (bit 1)
         }
     }
 }
@@ -115,67 +131,37 @@ impl FramebufferTag {
 // Calculate total header size at compile time
 const HEADER_SIZE: u32 =
     core::mem::size_of::<Multiboot2Header>() as u32 +
-    core::mem::size_of::<FramebufferTag>() as u32 +
+    core::mem::size_of::<ConsoleTag>() as u32 +
     core::mem::size_of::<EndTag>() as u32;
 
 /// The complete Multiboot2 header with tags
 #[repr(C, align(8))]
 pub struct CompleteHeader {
     header: Multiboot2Header,
-    framebuffer: FramebufferTag,
+    console: ConsoleTag,  // The Rune of Console Preference
     end: EndTag,
 }
 
 impl CompleteHeader {
     const fn new() -> Self {
+        // Request EGA text console explicitly via Console Flags Tag
         Self {
             header: Multiboot2Header::new(HEADER_SIZE),
-            framebuffer: FramebufferTag::new(1024, 768, 32),
+            console: ConsoleTag::new(),
             end: EndTag::new(),
         }
     }
 }
 
-/// Place the Multiboot2 header in a special section
+/// Place the Multiboot2 header with Console Flags Tag in a special section
 /// This will be placed at the start of the binary by the linker
+/// The Console Flags Tag is the Rune of Console Preference
 #[used]
 #[link_section = ".multiboot"]
 static MULTIBOOT_HEADER: CompleteHeader = CompleteHeader::new();
 
-// Alternative approach using inline assembly for maximum control
-// This ensures the header is exactly where we want it
-
-global_asm!(
-    r#"
-    .section .multiboot, "a"
-    .align 8
-
-    # Multiboot2 header
-    multiboot_header_start:
-        .long 0xE85250D6                  # Magic number
-        .long 0                           # Architecture: i386
-        .long multiboot_header_end - multiboot_header_start  # Header length
-        .long -(0xE85250D6 + 0 + (multiboot_header_end - multiboot_header_start))  # Checksum
-
-    # Framebuffer tag
-    .align 8
-    framebuffer_tag_start:
-        .short 5                          # Type: framebuffer
-        .short 0                          # Flags: optional
-        .long framebuffer_tag_end - framebuffer_tag_start  # Size
-        .long 1024                        # Width
-        .long 768                         # Height
-        .long 32                          # Depth (bits per pixel)
-    framebuffer_tag_end:
-
-    # End tag
-    .align 8
-        .short 0                          # Type: end
-        .short 0                          # Flags
-        .long 8                           # Size
-    multiboot_header_end:
-    "#
-);
+// NOTE: The assembly approach with global_asm! doesn't work reliably for
+// creating custom sections in Rust. We use the Rust struct above instead.
 
 /// Verify the header is valid at compile time
 #[cfg(test)]

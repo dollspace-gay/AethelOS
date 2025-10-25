@@ -21,57 +21,161 @@ use heartwood::{nexus, loom_of_fate, mana_pool, attunement, vga_buffer};
 #[macro_use]
 extern crate heartwood;
 
+/// Helper function to write a single character to COM1 serial port
+unsafe fn serial_out(c: u8) {
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") 0x3f8u16,
+        in("al") c,
+        options(nomem, nostack, preserves_flags)
+    );
+}
+
 /// The First Spark - Entry point of the Heartwood
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    // Write '1' to serial to prove _start() was called
+    unsafe { serial_out(b'1'); }
+
+    // Ultra-early debug: write directly to VGA buffer BEFORE any initialization
+    // VGA text buffer is at 0xB8000
+    unsafe {
+        let vga = 0xb8000 as *mut u16;
+        // Write 'AETHEL' in white on black (0x0F = white, 0x00 = black)
+        *vga.offset(0) = 0x0F41; // 'A'
+        *vga.offset(1) = 0x0F45; // 'E'
+        *vga.offset(2) = 0x0F54; // 'T'
+        *vga.offset(3) = 0x0F48; // 'H'
+        *vga.offset(4) = 0x0F45; // 'E'
+        *vga.offset(5) = 0x0F4C; // 'L'
+    }
+
+    // Write '2' to serial after VGA write
+    unsafe { serial_out(b'2'); }
+
     heartwood_init();
 
-    vga_buffer::print_banner();
+    // Write '3' to serial after init
+    unsafe { serial_out(b'3'); }
 
-    // Start the system threads and begin multitasking
-    println!();
-    match loom_of_fate::start_system_threads() {
-        Ok(()) => {
-            // Begin weaving - this will never return
-            loom_of_fate::begin_weaving();
+    // --- THE GREAT HAND-OFF ---
+    // This is the final act of the primordial bootstrap ghost.
+    // We leap one-way into the idle thread, which will awaken the system.
+    // This call NEVER returns - the ghost vanishes forever.
+    unsafe {
+        serial_out(b'H'); // Hand-off begins
+        let idle_context = loom_of_fate::get_idle_thread_context();
+
+        // CRITICAL: Verify the actual offsets of ThreadContext fields
+        use core::mem::offset_of;
+        use heartwood::loom_of_fate::context::ThreadContext;
+
+        println!("DEBUG: ThreadContext field offsets:");
+        println!("  rip offset: {:#x}", offset_of!(ThreadContext, rip));
+        println!("  cs offset: {:#x}", offset_of!(ThreadContext, cs));
+        println!("  rflags offset: {:#x}", offset_of!(ThreadContext, rflags));
+        println!("  rsp offset: {:#x}", offset_of!(ThreadContext, rsp));
+        println!("  ss offset: {:#x}", offset_of!(ThreadContext, ss));
+
+        // Read all the critical fields from the context
+        let ctx_ptr_addr = idle_context as u64;
+        let ctx_rsp = (*idle_context).rsp;
+        let ctx_rip = (*idle_context).rip;
+        let ctx_cs = (*idle_context).cs;
+        let ctx_ss = (*idle_context).ss;
+        let ctx_rflags = (*idle_context).rflags;
+
+        println!("DEBUG: idle_context pointer = {:p} (as u64: {:#x})", idle_context, ctx_ptr_addr);
+        println!("DEBUG: idle_context.rsp = {:#x}", ctx_rsp);
+        println!("DEBUG: idle_context.rip = {:#x}", ctx_rip);
+        println!("DEBUG: idle_context.cs = {:#x}, ss = {:#x}, rflags = {:#x}",
+                 ctx_cs, ctx_ss, ctx_rflags);
+
+        // Check if RSP equals context pointer (memory corruption indicator)
+        if ctx_rsp == ctx_ptr_addr {
+            println!("ERROR: RSP equals context pointer! Memory corruption detected!");
         }
-        Err(e) => {
-            println!("❌ Failed to start system threads: {:?}", e);
-            // Fall back to infinite loop
-            loop {
-                // Halt to save power
-                unsafe {
-                    core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
-                }
-            }
+
+        // Check stack alignment (must be 16-byte aligned)
+        if ctx_rsp % 16 != 0 {
+            println!("WARNING: RSP not 16-byte aligned! rsp={:#x}", ctx_rsp);
         }
+
+        // Verify segments are correct for kernel mode
+        if ctx_cs != 0x08 {
+            println!("WARNING: CS={:#x}, expected 0x08", ctx_cs);
+        }
+        if ctx_ss != 0x10 {
+            println!("WARNING: SS={:#x}, expected 0x10", ctx_ss);
+        }
+
+        serial_out(b'X'); // About to call context_switch_first
+        println!("DEBUG: Calling context_switch_first NOW...");
+
+        // CRITICAL: Force release all VGA buffer locks before the Great Hand-Off!
+        // The spinlock MUST be clear or the first println in idle thread will deadlock
+        heartwood::vga_buffer::force_unlock();
+
+        serial_out(b'Y'); // VGA lock forcibly released
+
+        heartwood::loom_of_fate::context::context_switch_first(idle_context);
     }
+
+    // UNREACHABLE - the bootstrap ghost is gone
+    unreachable!("The Great Hand-Off should never return")
 }
 
 /// Initialize the Heartwood's core systems
 fn heartwood_init() {
-    // Initialize VGA buffer for early output
-    vga_buffer::initialize();
+    unsafe { serial_out(b'A'); } // Before init sequence
 
-    println!("[] Awakening the Heartwood...");
+    // Initialize VGA text mode FIRST (no allocator dependency now!)
+    unsafe { serial_out(b'B'); }
+    heartwood::vga_buffer::initialize();
+    unsafe { serial_out(b'b'); }
+
+    // Display boot banner
+    heartwood::vga_buffer::print_banner();
+    println!("◈ Initializing Heartwood subsystems...");
 
     // Initialize the Mana Pool (memory management)
-    println!("[] Kindling the Mana Pool...");
+    unsafe { serial_out(b'C'); }
+    println!("◈ Awakening Mana Pool...");
     mana_pool::init();
+    unsafe { serial_out(b'D'); }
+    println!("  ✓ Mana Pool ready");
 
     // Initialize the Nexus (IPC)
-    println!("[] Opening the Nexus...");
+    unsafe { serial_out(b'E'); }
+    println!("◈ Opening the Nexus...");
     nexus::init();
+    unsafe { serial_out(b'F'); }
+    println!("  ✓ Nexus established");
 
     // Initialize the Loom of Fate (scheduler)
-    println!("[] Weaving the Loom of Fate...");
+    unsafe { serial_out(b'G'); }
+    println!("◈ Weaving the Loom of Fate...");
     loom_of_fate::init();
+    unsafe { serial_out(b'H'); }
+    println!("  ✓ Loom ready");
 
     // Initialize the Attunement Layer
-    println!("[] Attuning to the hardware...");
+    unsafe { serial_out(b'I'); }
+    println!("◈ Attuning to hardware...");
     attunement::init();
+    unsafe { serial_out(b'J'); }
+    println!("  ✓ Attunement complete");
 
-    println!("[] The Heartwood lives!");
+    // Initialize the Eldarin Shell
+    unsafe { serial_out(b'L'); }
+    println!("◈ Awakening the Eldarin Shell...");
+    heartwood::eldarin::init();
+    unsafe { serial_out(b'M'); }
+    println!("  ✓ Shell ready");
+
+    unsafe { serial_out(b'K'); }
+    println!("\n◈ Heartwood initialization complete!");
+    println!();
 }
 
 // Panic handler is defined in lib.rs

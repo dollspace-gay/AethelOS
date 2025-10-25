@@ -40,6 +40,9 @@ pub extern "C" fn divide_by_zero_handler() {
 }
 
 extern "C" fn divide_by_zero_inner() {
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'Z');  // Z = Div by Zero!
+    }
     crate::println!("❖ Disharmony: Division by zero attempted");
     crate::println!("❖ The void cannot be divided.");
 }
@@ -76,6 +79,9 @@ pub extern "C" fn general_protection_fault_handler() {
 }
 
 extern "C" fn general_protection_fault_inner() {
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'X');  // X = GPF!
+    }
     crate::println!("❖ Disharmony: General protection fault");
     crate::println!("❖ A boundary has been crossed without permission.");
 }
@@ -112,6 +118,9 @@ pub extern "C" fn page_fault_handler() {
 }
 
 extern "C" fn page_fault_inner() {
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'F');  // F = Page Fault!
+    }
     let faulting_address: u64;
     unsafe {
         asm!("mov {}, cr2", out(reg) faulting_address, options(nostack, preserves_flags));
@@ -219,6 +228,15 @@ extern "C" fn timer_inner() {
 pub extern "C" fn keyboard_handler() {
     unsafe {
         naked_asm!(
+            // IMMEDIATE debug marker - first thing we do
+            "push rax",
+            "push rdx",
+            "mov dx, 0x3f8",
+            "mov al, 0x21",  // '!' = INTERRUPT ENTRY!
+            "out dx, al",
+            "pop rdx",
+            "pop rax",
+
             "push rax",
             "push rcx",
             "push rdx",
@@ -229,8 +247,28 @@ pub extern "C" fn keyboard_handler() {
             "push r10",
             "push r11",
             "call {inner}",
+
+            // Debug: marker BEFORE EOI
+            "push rax",
+            "push rdx",
+            "mov dx, 0x3f8",
+            "mov al, 0x3C",  // '<' = BEFORE EOI
+            "out dx, al",
+            "pop rdx",
+            "pop rax",
+
             "mov al, 0x20",
             "out 0x20, al",
+
+            // Debug: marker AFTER EOI
+            "push rax",
+            "push rdx",
+            "mov dx, 0x3f8",
+            "mov al, 0x3E",  // '>' = AFTER EOI
+            "out dx, al",
+            "pop rdx",
+            "pop rax",
+
             "pop r11",
             "pop r10",
             "pop r9",
@@ -247,6 +285,16 @@ pub extern "C" fn keyboard_handler() {
 }
 
 extern "C" fn keyboard_inner() {
+    // Debug: output to serial to prove interrupt fired
+    unsafe {
+        core::arch::asm!(
+            "mov dx, 0x3f8",
+            "mov al, 0x49",  // 'I' = interrupt fired!
+            "out dx, al",
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
     // Handle keyboard interrupt via the keyboard driver
     crate::attunement::keyboard::on_interrupt();
 }

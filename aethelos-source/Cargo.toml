@@ -33,6 +33,7 @@ heapless = "0.8"
 bootloader = "0.9"
 x86_64 = "0.15"
 uart_16550 = "0.3"
+pic8259 = "0.10"
 
 # Async runtime (for the Nexus)
 async-trait = "0.1"
