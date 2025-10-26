@@ -118,8 +118,18 @@ fn detect_and_mount_storage() {
     // Initialize global VFS
     vfs_global::init();
 
-    // Try to detect primary master ATA drive
-    match AtaDrive::detect_primary_master() {
+    // Try to detect primary master first
+    println!("  Checking primary master...");
+    let drive = match AtaDrive::detect_primary_master() {
+        Some(d) => Some(d),
+        None => {
+            // Master not found or is ATAPI, try slave
+            println!("  Checking primary slave...");
+            AtaDrive::detect_primary_slave()
+        }
+    };
+
+    match drive {
         Some(drive) => {
             let sectors = drive.sector_count();
             let size_mb = (sectors * 512) / (1024 * 1024);
@@ -144,7 +154,7 @@ fn detect_and_mount_storage() {
             }
         }
         None => {
-            println!("  ⚠ No ATA drive detected");
+            println!("  ⚠ No ATA drive detected on primary channel");
             println!("  (Use QEMU with -hda <disk.img> to attach a disk)");
         }
     }

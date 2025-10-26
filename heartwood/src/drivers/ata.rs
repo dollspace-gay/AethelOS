@@ -57,11 +57,19 @@ impl AtaDrive {
         self.sectors
     }
 
-    /// Detect and initialize primary master drive
+    /// Detect and initialize primary master drive (drive 0)
     /// Based on r3 kernel's ATA driver: https://github.com/Narasimha1997/r3
     pub fn detect_primary_master() -> Option<Self> {
-        let bus = ATA_PRIMARY_BASE;
-        let drive = 0;
+        Self::detect_drive(ATA_PRIMARY_BASE, 0)
+    }
+
+    /// Detect and initialize primary slave drive (drive 1)
+    pub fn detect_primary_slave() -> Option<Self> {
+        Self::detect_drive(ATA_PRIMARY_BASE, 1)
+    }
+
+    /// Internal function to detect a drive on a specific bus and drive number
+    fn detect_drive(bus: u16, drive: u8) -> Option<Self> {
 
         unsafe {
             // Serial marker: 'A' = Starting detection
@@ -71,8 +79,9 @@ impl AtaDrive {
             // Write to Device Control Register (0x3F6): set nIEN bit (bit 1)
             outb(0x3F6, 0x02);  // Disable interrupts
 
-            // Step 1: Select master drive
-            outb(bus + ATA_REG_DRIVE, 0xA0);
+            // Step 1: Select drive (0xA0 = master, 0xB0 = slave)
+            let drive_select = 0xA0 | ((drive & 1) << 4);
+            outb(bus + ATA_REG_DRIVE, drive_select);
 
             // Step 2: Wait 400ns for drive selection to settle
             for _ in 0..4 {
