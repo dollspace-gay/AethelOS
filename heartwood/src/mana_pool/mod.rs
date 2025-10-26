@@ -22,6 +22,8 @@ pub mod ephemeral_mist;
 pub mod allocator;
 pub mod interrupt_lock;
 pub mod buddy;
+pub mod entropy;  // Random number generation for ASLR
+pub mod aslr;     // Address Space Layout Randomization
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights};
@@ -267,4 +269,7 @@ pub enum ManaError {
     CannotTransfer,
     /// Attempting to perform an operation without sufficient rights
     InsufficientRights,
+    /// SECURITY: Attempting to create a capability with both WRITE and EXECUTE rights
+    /// This violates the W^X (Write XOR Execute) security policy
+    SecurityViolation,
 }

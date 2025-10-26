@@ -9,6 +9,7 @@
 
 use alloc::alloc::{alloc, dealloc, Layout};
 use core::ptr::NonNull;
+use crate::mana_pool::aslr;
 
 /// Default stack size: 64 KB
 /// This is generous enough for most threads while being conservative with memory
@@ -24,6 +25,9 @@ pub const MAX_STACK_SIZE: usize = 1024 * 1024;
 pub struct Stack {
     bottom: NonNull<u8>,
     size: usize,
+    /// ASLR: Random offset from nominal stack pointer (0-64KB)
+    /// This makes the actual stack pointer unpredictable
+    aslr_offset: usize,
 }
 
 // Safety: Stack pointers can be safely sent between threads
@@ -44,6 +48,10 @@ impl Stack {
     ///
     /// # Returns
     /// Some(Stack) if allocation succeeds, None otherwise
+    ///
+    /// # Security
+    /// ASLR: The stack pointer is randomized with up to 64KB offset to prevent
+    /// exploits that rely on predictable stack addresses.
     pub fn with_size(size: usize) -> Option<Self> {
         // Clamp size to valid range and align to 16 bytes
         let size = size.clamp(MIN_STACK_SIZE, MAX_STACK_SIZE);
@@ -55,7 +63,16 @@ impl Stack {
         // Allocate the stack
         let ptr = unsafe { alloc(layout) };
 
-        NonNull::new(ptr).map(|bottom| Stack { bottom, size })
+        // SECURITY: ASLR - Randomize stack pointer offset (0-64KB)
+        // This makes buffer overflow attacks much harder as the exact
+        // stack location is unpredictable between threads
+        let aslr_offset = aslr::randomize_offset(65536, 16);
+
+        NonNull::new(ptr).map(|bottom| Stack {
+            bottom,
+            size,
+            aslr_offset,
+        })
     }
 
     /// Get the bottom (low address) of the stack
@@ -66,8 +83,20 @@ impl Stack {
     /// Get the top (high address) of the stack
     ///
     /// The stack grows downward, so this is bottom + size
+    ///
+    /// # Security
+    /// ASLR: The actual stack top includes a random offset, making the
+    /// stack pointer unpredictable to attackers.
     pub fn top(&self) -> u64 {
-        self.bottom() + self.size as u64
+        // SECURITY: Include ASLR offset
+        // The actual stack pointer starts at top - aslr_offset
+        // This gives us up to 64KB of randomization
+        self.bottom() + self.size as u64 - self.aslr_offset as u64
+    }
+
+    /// Get the ASLR offset applied to this stack
+    pub fn aslr_offset(&self) -> usize {
+        self.aslr_offset
     }
 
     /// Get the size of the stack in bytes

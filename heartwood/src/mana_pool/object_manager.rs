@@ -149,6 +149,13 @@ impl ObjectManager {
             return Err(ManaError::InvalidCapability);
         }
 
+        // SECURITY: Enforce W^X (Write XOR Execute)
+        if !new_rights.validate_wx() {
+            // Attempting to create a capability with both WRITE and EXECUTE!
+            // This is a critical security violation.
+            return Err(ManaError::SecurityViolation);
+        }
+
         // Can only derive rights that the original capability has
         if !capability.rights.contains(new_rights) {
             return Err(ManaError::InsufficientRights);
