@@ -102,10 +102,10 @@ pub struct Fat32Bpb {
     pub fsinfo_sector: u16,
     /// Backup boot sector location (usually 6, 0xFFFF if not present)
     pub backup_boot_sector: u16,
-    /// Volume label (11 characters, space-padded)
-    pub volume_label: String,
-    /// Filesystem type string (should be "FAT32   ")
-    pub fs_type: String,
+    /// Volume label (11 bytes, space-padded)
+    pub volume_label: [u8; 11],
+    /// Filesystem type string (8 bytes, should be "FAT32   ")
+    pub fs_type: [u8; 8],
     /// Cached FSInfo data (if available)
     pub fsinfo: Option<FSInfo>,
 }
@@ -183,20 +183,16 @@ impl Fat32Bpb {
         // Backup boot sector at offset 50 (usually 6)
         let backup_boot_sector = u16::from_le_bytes([boot_sector[50], boot_sector[51]]);
 
-        // Volume label at offset 71 (11 bytes)
-        let volume_label = core::str::from_utf8(&boot_sector[71..82])
-            .unwrap_or("INVALID    ")
-            .trim_end()
-            .to_string();
+        // Volume label at offset 71 (11 bytes) - copy directly, no String allocation
+        let mut volume_label = [0u8; 11];
+        volume_label.copy_from_slice(&boot_sector[71..82]);
 
         // Filesystem type at offset 82 (8 bytes, should be "FAT32   ")
-        let fs_type = core::str::from_utf8(&boot_sector[82..90])
-            .unwrap_or("UNKNOWN ")
-            .trim_end()
-            .to_string();
+        let mut fs_type = [0u8; 8];
+        fs_type.copy_from_slice(&boot_sector[82..90]);
 
         // Validate it's actually FAT32
-        if !fs_type.starts_with("FAT32") {
+        if !fs_type.starts_with(b"FAT32") {
             return Err("Filesystem type is not FAT32");
         }
 
@@ -285,8 +281,18 @@ impl Fat32Bpb {
     /// 2. If that fails, try the backup boot sector (if specified)
     /// 3. Parse FSInfo (if present and valid)
     pub fn from_device(device: &dyn BlockDevice) -> Result<Self, &'static str> {
+        // Debug: entering from_device
+        unsafe {
+            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'A', options(nomem, nostack));
+        }
+
         // Try primary boot sector first
         let boot_sector_result = device.read_sector(0);
+
+        // Debug: read_sector returned
+        unsafe {
+            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'B', options(nomem, nostack));
+        }
 
         let (boot_sector, used_backup) = match boot_sector_result {
             Ok(data) => {

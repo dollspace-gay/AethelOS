@@ -60,28 +60,28 @@ impl AtaDrive {
     /// Detect and initialize primary master drive (drive 0)
     /// Based on r3 kernel's ATA driver: https://github.com/Narasimha1997/r3
     pub fn detect_primary_master() -> Option<Self> {
-        Self::detect_drive(ATA_PRIMARY_BASE, 0)
+        unsafe { Self::detect_drive(ATA_PRIMARY_BASE, 0) }
     }
 
     /// Detect and initialize primary slave drive (drive 1)
     pub fn detect_primary_slave() -> Option<Self> {
-        Self::detect_drive(ATA_PRIMARY_BASE, 1)
+        unsafe { Self::detect_drive(ATA_PRIMARY_BASE, 1) }
     }
 
     /// Internal function to detect a drive on a specific bus and drive number
-    fn detect_drive(bus: u16, drive: u8) -> Option<Self> {
+    ///
+    /// SAFETY: Performs raw I/O port access to detect and initialize ATA drives.
+    unsafe fn detect_drive(bus: u16, drive: u8) -> Option<Self> {
+        // Serial marker: 'A' = Starting detection
+        Self::debug_char(b'A');
 
-        unsafe {
-            // Serial marker: 'A' = Starting detection
-            Self::debug_char(b'A');
+        // Step 0: Disable interrupts on ATA controller
+        // Write to Device Control Register (0x3F6): set nIEN bit (bit 1)
+        outb(0x3F6, 0x02);  // Disable interrupts
 
-            // Step 0: Disable interrupts on ATA controller
-            // Write to Device Control Register (0x3F6): set nIEN bit (bit 1)
-            outb(0x3F6, 0x02);  // Disable interrupts
-
-            // Step 1: Select drive (0xA0 = master, 0xB0 = slave)
-            let drive_select = 0xA0 | ((drive & 1) << 4);
-            outb(bus + ATA_REG_DRIVE, drive_select);
+        // Step 1: Select drive (0xA0 = master, 0xB0 = slave)
+        let drive_select = 0xA0 | ((drive & 1) << 4);
+        outb(bus + ATA_REG_DRIVE, drive_select);
 
             // Step 2: Wait 400ns for drive selection to settle
             for _ in 0..4 {
@@ -147,8 +147,11 @@ impl AtaDrive {
 
                 // Check for error bit
                 if (status & ATA_STATUS_ERR) != 0 {
+                    let error = inb(bus + ATA_REG_ERROR);
                     Self::debug_char(b'!');  // Error
                     Self::debug_hex(status);
+                    Self::debug_char(b'E');  // Error register
+                    Self::debug_hex(error);
                     return None;
                 }
 
@@ -194,53 +197,52 @@ impl AtaDrive {
             // If sector count is 0, use a default
             let sectors = if sectors > 0 { sectors } else { 2048 };
 
-            // Serial marker: 'Z' = Success!
-            Self::debug_char(b'Z');
+        // Serial marker: 'Z' = Success!
+        Self::debug_char(b'Z');
 
-            Some(AtaDrive {
-                bus,
-                drive,
-                sectors,
-                sector_size: 512,
-            })
-        }
+        Some(AtaDrive {
+            bus,
+            drive,
+            sectors,
+            sector_size: 512,
+        })
     }
 
     /// Write a debug string to COM1 serial port
+    ///
+    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
     fn debug_str(s: &[u8]) {
-        unsafe {
-            for &byte in s {
-                while (inb(0x3FD) & 0x20) == 0 {}
-                outb(0x3F8, byte);
-            }
+        for &byte in s {
+            while (inb(0x3FD) & 0x20) == 0 {}
+            outb(0x3F8, byte);
         }
     }
 
     /// Write a debug character to COM1 serial port with compact prefix
+    ///
+    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
     fn debug_char(c: u8) {
         // Use compact format: "*X " - write directly without waiting
         // to avoid potential conflicts with ATA port access
-        unsafe {
-            outb(0x3F8, b'*');
-            outb(0x3F8, c);
-            outb(0x3F8, b' ');
-        }
+        outb(0x3F8, b'*');
+        outb(0x3F8, c);
+        outb(0x3F8, b' ');
     }
 
     /// Write a byte as two hex digits to serial port
+    ///
+    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
     fn debug_hex(value: u8) {
         const HEX: &[u8] = b"0123456789ABCDEF";
-        unsafe {
-            let high = (value >> 4) & 0x0F;
-            let low = value & 0x0F;
+        let high = (value >> 4) & 0x0F;
+        let low = value & 0x0F;
 
-            // Write directly without waiting
-            outb(0x3F8, b'=');
-            outb(0x3F8, b'0');
-            outb(0x3F8, b'x');
-            outb(0x3F8, HEX[high as usize]);
-            outb(0x3F8, HEX[low as usize]);
-        }
+        // Write directly without waiting
+        outb(0x3F8, b'=');
+        outb(0x3F8, b'0');
+        outb(0x3F8, b'x');
+        outb(0x3F8, HEX[high as usize]);
+        outb(0x3F8, HEX[low as usize]);
     }
 
     /// Send IDENTIFY command to drive
@@ -344,14 +346,15 @@ impl AtaDrive {
     /// Read a single sector (28-bit LBA)
     /// Read a single sector using PIO mode
     /// Based on r3 kernel's read_sectors_lba28()
-    fn read_sector_pio(&self, lba: u64) -> Result<Vec<u8>, BlockDeviceError> {
+    ///
+    /// SAFETY: Performs raw I/O port access to read sectors from ATA drive.
+    unsafe fn read_sector_pio(&self, lba: u64) -> Result<Vec<u8>, BlockDeviceError> {
         if lba >= self.sectors {
             return Err(BlockDeviceError::InvalidSector);
         }
 
-        unsafe {
-            // Wait for drive to not be busy
-            let mut timeout = 0;
+        // Wait for drive to not be busy
+        let mut timeout = 0;
             loop {
                 let status = inb(self.bus + ATA_REG_STATUS);
                 if status & ATA_STATUS_BSY == 0 {
@@ -419,14 +422,13 @@ impl AtaDrive {
             }
 
             // Convert to Vec<u8>
-            let mut buffer = Vec::with_capacity(512);
-            for word in data.iter() {
-                buffer.push((word & 0xFF) as u8);
-                buffer.push((word >> 8) as u8);
-            }
-
-            Ok(buffer)
+        let mut buffer = Vec::with_capacity(512);
+        for word in data.iter() {
+            buffer.push((word & 0xFF) as u8);
+            buffer.push((word >> 8) as u8);
         }
+
+        Ok(buffer)
     }
 
     /// Wait for drive to not be busy (with timeout)
@@ -466,7 +468,7 @@ impl BlockDevice for AtaDrive {
     }
 
     fn read_sector(&self, sector: u64) -> Result<Vec<u8>, BlockDeviceError> {
-        self.read_sector_pio(sector)
+        unsafe { self.read_sector_pio(sector) }
     }
 
     fn read_sectors(&self, start_sector: u64, count: u32) -> Result<Vec<u8>, BlockDeviceError> {

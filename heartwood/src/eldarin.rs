@@ -457,6 +457,7 @@ fn execute_command(input: &str) {
         "preempt" => cmd_preempt(args),
         "uptime" => cmd_uptime(),
         "wards" => cmd_wards(),            // Security wards (ASLR, W^X)
+        "sigils" => cmd_sigils(),          // Weaver's Sigils (stack canaries)
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -907,8 +908,10 @@ fn cmd_vfs_test() {
     // Test 1: Check filesystem info
     crate::println!();
     crate::println!("  3. Testing filesystem metadata...");
-    crate::println!("     Volume label: {}", fat32.bpb.volume_label);
-    crate::println!("     Filesystem: {}", fat32.bpb.fs_type);
+    crate::println!("     Volume label: {}",
+        core::str::from_utf8(&fat32.bpb.volume_label).unwrap_or("INVALID").trim_end());
+    crate::println!("     Filesystem: {}",
+        core::str::from_utf8(&fat32.bpb.fs_type).unwrap_or("INVALID").trim_end());
     crate::println!("     Bytes per sector: {}", fat32.bpb.bytes_per_sector);
     crate::println!("     Cluster size: {} bytes", fat32.bpb.cluster_size());
 
@@ -984,7 +987,7 @@ fn cmd_vfs_info() {
 
 /// VFS LS - List directory contents
 fn cmd_vfs_ls(args: &str) {
-    use crate::vfs::{FileSystem, Path};
+    use crate::vfs::Path;
     use crate::vfs::global as vfs_global;
 
     let path = if args.is_empty() { "/" } else { args.trim() };
@@ -1034,7 +1037,7 @@ fn cmd_vfs_ls(args: &str) {
 
 /// VFS CAT - Display file contents
 fn cmd_vfs_cat(args: &str) {
-    use crate::vfs::{FileSystem, Path};
+    use crate::vfs::Path;
     use crate::vfs::global as vfs_global;
 
     if args.is_empty() {
@@ -1105,4 +1108,9 @@ fn cmd_vfs_pwd() {
 fn cmd_wards() {
     // Delegate to the paged wards command with capability testing
     crate::wards_command::cmd_wards();
+}
+
+/// SIGILS - Display The Weaver's Sigils (stack canaries)
+fn cmd_sigils() {
+    crate::sigils_command::cmd_sigils();
 }

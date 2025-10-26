@@ -229,6 +229,14 @@ impl Scheduler {
             let from_ctx_ptr = &mut self.threads[from_idx].context as *mut ThreadContext;
             let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
 
+            // Update The Weaver's Sigil (stack canary) for the new thread
+            // SECURITY: This MUST happen before the context switch so that
+            // LLVM-generated code in the new thread uses the correct canary
+            let next_sigil = self.threads[to_idx].sigil;
+            unsafe {
+                crate::stack_protection::set_current_canary(next_sigil);
+            }
+
             // Update current thread ID
             self.current_thread = Some(next_id);
             self.context_switches += 1;

@@ -193,6 +193,19 @@ fn heartwood_init() {
     unsafe { mana_pool::sealing::init(); }
     println!("  ✓ Capability sealing ready (HMAC-SHA256)");
 
+    // Initialize The Weaver's Sigil (stack canary protection)
+    println!("◈ Weaving the protective sigils...");
+    unsafe {
+        // Set initial canary for boot thread
+        // This will be updated per-thread by the scheduler during context switches
+        use mana_pool::entropy::ChaCha8Rng;
+        let mut rng = ChaCha8Rng::from_hardware_fast();
+        let boot_sigil = ((rng.next_u32() as u64) << 32) | (rng.next_u32() as u64);
+        heartwood::stack_protection::set_current_canary(boot_sigil);
+    }
+    println!("  ✓ The Weaver's Sigil active (stack canary: LLVM strong mode)");
+    println!("    Protecting all functions with buffers or address-taken locals");
+
     // Initialize the Nexus (IPC)
     unsafe { serial_out(b'E'); }
     println!("◈ Opening the Nexus...");
@@ -206,6 +219,12 @@ fn heartwood_init() {
     loom_of_fate::init();
     unsafe { serial_out(b'H'); }
     println!("  ✓ Loom ready");
+
+    // Initialize heap canaries (after thread creation to avoid early boot issues)
+    unsafe {
+        mana_pool::heap_canaries::init();
+    }
+    println!("  ✓ Heap canaries active (pre/post allocation protection)");
 
     // Initialize the Attunement Layer
     unsafe { serial_out(b'I'); }

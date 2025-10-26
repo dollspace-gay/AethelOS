@@ -155,10 +155,8 @@ fn test_capability_sealing_page1() {
                             crate::println!("    ✓ Derived capability ID: {}", derived_id.raw());
 
                             // Store for page 2
-                            unsafe {
-                                STORED_CAP_ID = Some(cap_id);
-                                STORED_DERIVED_ID = Some(derived_id);
-                            }
+                            STORED_CAP_ID = Some(cap_id);
+                            STORED_DERIVED_ID = Some(derived_id);
                         }
                         Err(e) => {
                             crate::println!("    ✗ Derivation failed: {:?}", e);

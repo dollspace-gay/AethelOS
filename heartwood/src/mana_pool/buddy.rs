@@ -120,14 +120,32 @@ impl BuddyAllocator {
 
     /// Allocate a block of at least `size` bytes
     ///
-    /// Returns the address of the allocated block, or None if out of memory
+    /// Returns the address of the allocated block (user data, after pre-canary),
+    /// or None if out of memory.
+    ///
+    /// Memory layout:
+    /// ```
+    /// [PRE_CANARY (8B)] [USER DATA (size)] [POST_CANARY (8B)]
+    /// ^                  ^
+    /// block address      returned address
+    /// ```
     pub fn allocate(&mut self, size: usize) -> Option<usize> {
         if size == 0 {
             return None;
         }
 
+        // Check if heap canaries are enabled
+        let canaries_enabled = super::heap_canaries::are_enabled();
+
+        // Add space for heap canaries only if enabled
+        let total_size = if canaries_enabled {
+            size + super::heap_canaries::TOTAL_CANARY_OVERHEAD
+        } else {
+            size
+        };
+
         // Find the order needed for this size
-        let needed_order = self.size_to_order(size);
+        let needed_order = self.size_to_order(total_size);
         if needed_order > MAX_ORDER {
             return None; // Allocation too large
         }
@@ -141,7 +159,19 @@ impl BuddyAllocator {
         // Split block if it's larger than needed
         self.split_block(block, alloc_order, needed_order);
 
-        Some(block.as_ptr() as usize)
+        let block_addr = block.as_ptr() as usize;
+
+        // Write heap canaries around the allocation (only if enabled)
+        if canaries_enabled {
+            unsafe {
+                super::heap_canaries::write_canaries(block_addr, size);
+            }
+            // Return pointer to user data (after pre-canary)
+            Some(block_addr + super::heap_canaries::CANARY_SIZE)
+        } else {
+            // Return block address directly (no canary offset)
+            Some(block_addr)
+        }
     }
 
     /// Deallocate a block
@@ -149,21 +179,46 @@ impl BuddyAllocator {
     /// # Safety
     ///
     /// The caller must ensure:
-    /// - `addr` was returned by a previous call to `allocate`
-    /// - `size` matches the size passed to `allocate`
+    /// - `addr` was returned by a previous call to `allocate` (points to user data)
+    /// - `size` matches the size passed to `allocate` (user data size, not including canaries)
     /// - The block has not already been deallocated
     pub unsafe fn deallocate(&mut self, addr: usize, size: usize) {
         if size == 0 {
             return;
         }
 
-        let order = self.size_to_order(size);
+        // Check if heap canaries are enabled
+        let canaries_enabled = super::heap_canaries::are_enabled();
+
+        let (block_addr, total_size) = if canaries_enabled {
+            // Calculate the actual block address (before pre-canary)
+            let blk_addr = addr - super::heap_canaries::CANARY_SIZE;
+
+            // Verify heap canaries before deallocation
+            if !super::heap_canaries::verify_canaries(blk_addr, size) {
+                panic!("◈ HEAP CORRUPTION: Canary violation detected during deallocation!\n\
+                       \n\
+                       Address: 0x{:016x}\n\
+                       Size: {} bytes\n\
+                       \n\
+                       The Weaver's Sigil has detected heap buffer overflow.\n\
+                       This allocation's protective canaries were corrupted.", addr, size);
+            }
+
+            // Calculate total size including canaries
+            (blk_addr, size + super::heap_canaries::TOTAL_CANARY_OVERHEAD)
+        } else {
+            // No canaries - addr is the block address, size is actual size
+            (addr, size)
+        };
+
+        let order = self.size_to_order(total_size);
         if order > MAX_ORDER {
             return;
         }
 
-        // Create a block at this address
-        let block = Block::new(addr);
+        // Create a block at the actual block address
+        let block = Block::new(block_addr);
 
         // Try to coalesce with buddy
         self.coalesce_and_free(block, order);

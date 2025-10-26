@@ -11,7 +11,7 @@
 ///! - **Kernel-Only**: Secret key never leaves kernel space
 
 use core::mem::MaybeUninit;
-use crate::mana_pool::entropy::{HardwareRng, ChaCha8Rng};
+use crate::mana_pool::entropy::ChaCha8Rng;
 
 /// Capability sealer using HMAC-SHA256
 pub struct CapabilitySealer {

@@ -57,8 +57,18 @@ impl Fat32 {
     /// * `Ok(Fat32)` - Successfully mounted FAT32 filesystem
     /// * `Err(FsError)` - Invalid or corrupted filesystem
     pub fn new(device: Box<dyn BlockDevice>) -> Result<Self, FsError> {
+        // Debug: entering Fat32::new
+        unsafe {
+            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'1', options(nomem, nostack));
+        }
+
         let bpb = Fat32Bpb::from_device(&*device)
             .map_err(|_| FsError::IoError)?;
+
+        // Debug: BPB parsed successfully
+        unsafe {
+            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'2', options(nomem, nostack));
+        }
 
         Ok(Self { device, bpb })
     }

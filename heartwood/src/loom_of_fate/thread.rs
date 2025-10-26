@@ -51,6 +51,11 @@ pub struct Thread {
     #[allow(dead_code)]
     pub(crate) stack_top: u64,
 
+    /// The Weaver's Sigil - unique per-thread stack canary
+    /// This secret value protects against stack buffer overflows
+    /// It should NEVER be exposed to userspace
+    pub(crate) sigil: u64,
+
     // Harmony tracking
     pub(crate) resource_usage: ResourceUsage,
     pub(crate) harmony_score: f32,
@@ -80,9 +85,13 @@ impl Thread {
         // Create initial context for this thread
         let context = ThreadContext::new(entry_point as u64, stack_top);
 
+        // Generate unique Weaver's Sigil (stack canary) for this thread
+        let sigil = Self::generate_sigil();
+
         // DEBUG: Verify context was created correctly
         crate::println!("  Thread::new - id={}, entry={:#x}, stack_top={:#x}, context.rsp={:#x}",
                        id.0, entry_point as u64, stack_top, context.rsp);
+        crate::println!("  Weaver's Sigil: 0x{:016x}", sigil);
 
         Self {
             id,
@@ -92,12 +101,29 @@ impl Thread {
             context,
             stack_bottom,
             stack_top,
+            sigil,
             resource_usage: ResourceUsage::default(),
             harmony_score: 1.0, // Start in perfect harmony
             time_slices_used: 0,
             yields: 0,
             last_run_time: 0,
         }
+    }
+
+    /// Generate a unique Weaver's Sigil (stack canary) for this thread
+    ///
+    /// Uses ChaCha8 RNG seeded from hardware (RDTSC) to generate
+    /// a cryptographically strong 64-bit random value.
+    ///
+    /// # Security
+    /// This value MUST remain secret and never be exposed to userspace.
+    fn generate_sigil() -> u64 {
+        use crate::mana_pool::entropy::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::from_hardware_fast();
+        let high = rng.next_u32() as u64;
+        let low = rng.next_u32() as u64;
+        (high << 32) | low
     }
 
     /// Get a mutable reference to the thread's context
