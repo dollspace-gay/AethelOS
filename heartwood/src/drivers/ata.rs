@@ -58,19 +58,180 @@ impl AtaDrive {
     }
 
     /// Detect and initialize primary master drive
+    /// Based on r3 kernel's ATA driver: https://github.com/Narasimha1997/r3
     pub fn detect_primary_master() -> Option<Self> {
         let bus = ATA_PRIMARY_BASE;
         let drive = 0;
 
-        // Aggressive detection: just assume drive exists and try to use it
-        // If sector reads work, it's a real drive!
-        // This avoids IDENTIFY command which was hanging
-        Some(AtaDrive {
-            bus,
-            drive,
-            sectors: 204800,  // Assume 100MB (will be corrected if FAT32 mount works)
-            sector_size: 512,
-        })
+        unsafe {
+            // Serial marker: 'A' = Starting detection
+            Self::debug_char(b'A');
+
+            // Step 0: Disable interrupts on ATA controller
+            // Write to Device Control Register (0x3F6): set nIEN bit (bit 1)
+            outb(0x3F6, 0x02);  // Disable interrupts
+
+            // Step 1: Select master drive
+            outb(bus + ATA_REG_DRIVE, 0xA0);
+
+            // Step 2: Wait 400ns for drive selection to settle
+            for _ in 0..4 {
+                inb(bus + ATA_REG_STATUS);
+            }
+
+            // Step 3: CRITICAL - Wait for BSY to clear BEFORE checking signature
+            Self::debug_char(b'B');  // Waiting for initial BSY clear
+            let mut timeout = 0;
+            loop {
+                let status = inb(bus + ATA_REG_STATUS);
+                if (status & ATA_STATUS_BSY) == 0 {
+                    break;  // BSY is clear, safe to proceed
+                }
+                timeout += 1;
+                if timeout > 1000000 {
+                    Self::debug_char(b'T');  // Timeout waiting for BSY
+                    return None;
+                }
+                core::hint::spin_loop();
+            }
+
+            // Step 4: Check device signature to determine ATA vs ATAPI
+            // CRITICAL: Do this BEFORE sending any command!
+            Self::debug_char(b'C');  // Checking signature
+
+            let lba_mid = inb(bus + ATA_REG_LBA_MID);
+            let lba_high = inb(bus + ATA_REG_LBA_HIGH);
+
+            // Debug: show signature bytes
+            Self::debug_hex(lba_mid);
+            Self::debug_hex(lba_high);
+
+            // ATAPI signature: 0x14 (LBA mid) / 0xEB (LBA high)
+            if lba_mid == 0x14 && lba_high == 0xEB {
+                Self::debug_char(b'P');  // ATAPI device detected
+                return None;  // We don't support ATAPI yet
+            }
+
+            // ATA signature should be 0x00 / 0x00
+            if lba_mid != 0x00 || lba_high != 0x00 {
+                Self::debug_char(b'U');  // Unknown signature
+                return None;
+            }
+
+            // Step 5: Send correct IDENTIFY command (0xEC for ATA)
+            Self::debug_char(b'D');  // Sending IDENTIFY DEVICE
+            outb(bus + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
+
+            Self::debug_char(b'E');  // Command sent successfully!
+
+            // Step 6: Wait for drive to process command (BSY to clear, then DRQ to set)
+            Self::debug_char(b'E');  // Waiting for response
+            timeout = 0;
+            loop {
+                let status = inb(bus + ATA_REG_STATUS);
+
+                // Check if status is 0 (no drive)
+                if status == 0 {
+                    Self::debug_char(b'0');  // No drive
+                    return None;
+                }
+
+                // Check for error bit
+                if (status & ATA_STATUS_ERR) != 0 {
+                    Self::debug_char(b'!');  // Error
+                    Self::debug_hex(status);
+                    return None;
+                }
+
+                // Check if BSY is clear AND DRQ is set (data ready)
+                if (status & ATA_STATUS_BSY) == 0 && (status & ATA_STATUS_DRQ) != 0 {
+                    Self::debug_char(b'F');  // Data ready!
+                    break;
+                }
+
+                timeout += 1;
+                if timeout > 1000000 {
+                    Self::debug_char(b'T');  // Timeout
+                    return None;
+                }
+                core::hint::spin_loop();
+            }
+
+            // Check if this is an ATA drive (not ATAPI)
+            let lba_mid = inb(bus + ATA_REG_LBA_MID);
+            let lba_high = inb(bus + ATA_REG_LBA_HIGH);
+            if lba_mid != 0 || lba_high != 0 {
+                Self::debug_char(b'P');  // ATAPI detected
+                return None;
+            }
+
+            // Step 7: Read IDENTIFY data (256 words = 512 bytes)
+            Self::debug_char(b'G');  // Reading data
+
+            // Read 256 words (512 bytes) of identify data
+            let mut identify_data: [u16; 256] = [0; 256];
+            for i in 0..256 {
+                identify_data[i] = inw(bus + ATA_REG_DATA);
+            }
+
+            // Serial marker: 'H' = Parsing sector count
+            Self::debug_char(b'H');
+
+            // Parse sector count from words 60-61 (28-bit LBA)
+            let sectors_low = identify_data[60] as u32;
+            let sectors_high = identify_data[61] as u32;
+            let sectors = ((sectors_high as u64) << 16) | (sectors_low as u64);
+
+            // If sector count is 0, use a default
+            let sectors = if sectors > 0 { sectors } else { 2048 };
+
+            // Serial marker: 'Z' = Success!
+            Self::debug_char(b'Z');
+
+            Some(AtaDrive {
+                bus,
+                drive,
+                sectors,
+                sector_size: 512,
+            })
+        }
+    }
+
+    /// Write a debug string to COM1 serial port
+    fn debug_str(s: &[u8]) {
+        unsafe {
+            for &byte in s {
+                while (inb(0x3FD) & 0x20) == 0 {}
+                outb(0x3F8, byte);
+            }
+        }
+    }
+
+    /// Write a debug character to COM1 serial port with compact prefix
+    fn debug_char(c: u8) {
+        // Use compact format: "*X " - write directly without waiting
+        // to avoid potential conflicts with ATA port access
+        unsafe {
+            outb(0x3F8, b'*');
+            outb(0x3F8, c);
+            outb(0x3F8, b' ');
+        }
+    }
+
+    /// Write a byte as two hex digits to serial port
+    fn debug_hex(value: u8) {
+        const HEX: &[u8] = b"0123456789ABCDEF";
+        unsafe {
+            let high = (value >> 4) & 0x0F;
+            let low = value & 0x0F;
+
+            // Write directly without waiting
+            outb(0x3F8, b'=');
+            outb(0x3F8, b'0');
+            outb(0x3F8, b'x');
+            outb(0x3F8, HEX[high as usize]);
+            outb(0x3F8, HEX[low as usize]);
+        }
     }
 
     /// Send IDENTIFY command to drive
@@ -172,52 +333,91 @@ impl AtaDrive {
     }
 
     /// Read a single sector (28-bit LBA)
+    /// Read a single sector using PIO mode
+    /// Based on r3 kernel's read_sectors_lba28()
     fn read_sector_pio(&self, lba: u64) -> Result<Vec<u8>, BlockDeviceError> {
         if lba >= self.sectors {
             return Err(BlockDeviceError::InvalidSector);
         }
 
-        // Select drive (LBA mode)
-        let drive_byte = 0xE0 | (self.drive << 4) | ((lba >> 24) & 0x0F) as u8;
-        outb(self.bus + ATA_REG_DRIVE, drive_byte);
-        Self::wait_400ns(self.bus);
-
-        // Send sector count (1 sector)
-        outb(self.bus + ATA_REG_SECTOR_COUNT, 1);
-
-        // Send LBA
-        outb(self.bus + ATA_REG_LBA_LOW, (lba & 0xFF) as u8);
-        outb(self.bus + ATA_REG_LBA_MID, ((lba >> 8) & 0xFF) as u8);
-        outb(self.bus + ATA_REG_LBA_HIGH, ((lba >> 16) & 0xFF) as u8);
-
-        // Send READ SECTORS command
-        outb(self.bus + ATA_REG_COMMAND, ATA_CMD_READ_SECTORS);
-
-        // Wait for drive to be ready
-        if !Self::wait_not_busy(self.bus) {
-            return Err(BlockDeviceError::IoError);
-        }
-
-        // Wait for DRQ (with timeout)
-        for _ in 0..1000 {
-            let status = inb(self.bus + ATA_REG_STATUS);
-            if status & ATA_STATUS_ERR != 0 {
-                return Err(BlockDeviceError::IoError);
+        unsafe {
+            // Wait for drive to not be busy
+            let mut timeout = 0;
+            loop {
+                let status = inb(self.bus + ATA_REG_STATUS);
+                if status & ATA_STATUS_BSY == 0 {
+                    break;
+                }
+                timeout += 1;
+                if timeout > 1000000 {
+                    return Err(BlockDeviceError::IoError);
+                }
             }
-            if status & ATA_STATUS_DRQ != 0 {
-                break;
+
+            // Select drive (LBA mode) + high 4 bits of LBA
+            let drive_byte = 0xE0 | (self.drive << 4) | ((lba >> 24) & 0x0F) as u8;
+            outb(self.bus + ATA_REG_DRIVE, drive_byte);
+
+            // Wait 400ns
+            for _ in 0..4 {
+                inb(self.bus + ATA_REG_STATUS);
             }
-        }
 
-        // Read 512 bytes (256 words)
-        let mut buffer = Vec::with_capacity(512);
-        for _ in 0..256 {
-            let word = inw(self.bus + ATA_REG_DATA);
-            buffer.push((word & 0xFF) as u8);
-            buffer.push((word >> 8) as u8);
-        }
+            // Send sector count (1 sector)
+            outb(self.bus + ATA_REG_SECTOR_COUNT, 1);
 
-        Ok(buffer)
+            // Send LBA (lower 24 bits)
+            outb(self.bus + ATA_REG_LBA_LOW, (lba & 0xFF) as u8);
+            outb(self.bus + ATA_REG_LBA_MID, ((lba >> 8) & 0xFF) as u8);
+            outb(self.bus + ATA_REG_LBA_HIGH, ((lba >> 16) & 0xFF) as u8);
+
+            // Send READ SECTORS command (0x20)
+            outb(self.bus + ATA_REG_COMMAND, ATA_CMD_READ_SECTORS);
+
+            // Wait for BSY to clear
+            timeout = 0;
+            loop {
+                let status = inb(self.bus + ATA_REG_STATUS);
+                if status & ATA_STATUS_BSY == 0 {
+                    break;
+                }
+                timeout += 1;
+                if timeout > 1000000 {
+                    return Err(BlockDeviceError::IoError);
+                }
+            }
+
+            // Wait for DRQ to be set
+            timeout = 0;
+            loop {
+                let status = inb(self.bus + ATA_REG_STATUS);
+                if status & ATA_STATUS_ERR != 0 {
+                    return Err(BlockDeviceError::IoError);
+                }
+                if status & ATA_STATUS_DRQ != 0 {
+                    break;
+                }
+                timeout += 1;
+                if timeout > 1000000 {
+                    return Err(BlockDeviceError::IoError);
+                }
+            }
+
+            // Read 256 words (512 bytes) into fixed-size array
+            let mut data: [u16; 256] = [0; 256];
+            for i in 0..256 {
+                data[i] = inw(self.bus + ATA_REG_DATA);
+            }
+
+            // Convert to Vec<u8>
+            let mut buffer = Vec::with_capacity(512);
+            for word in data.iter() {
+                buffer.push((word & 0xFF) as u8);
+                buffer.push((word >> 8) as u8);
+            }
+
+            Ok(buffer)
+        }
     }
 
     /// Wait for drive to not be busy (with timeout)

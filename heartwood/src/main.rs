@@ -108,9 +108,9 @@ pub extern "C" fn _start() -> ! {
     }
 }
 
-/// Mount storage - using RAM disk since ATA driver has issues
+/// Detect ATA drives and mount FAT32 filesystem
 fn detect_and_mount_storage() {
-    use heartwood::vfs::mock_fat32::MockFat32Device;
+    use heartwood::drivers::AtaDrive;
     use heartwood::vfs::fat32::Fat32;
     use heartwood::vfs::global as vfs_global;
     use alloc::boxed::Box;
@@ -118,30 +118,36 @@ fn detect_and_mount_storage() {
     // Initialize global VFS
     vfs_global::init();
 
-    println!("  ◈ Creating RAM disk (64KB FAT32 filesystem)...");
+    // Try to detect primary master ATA drive
+    match AtaDrive::detect_primary_master() {
+        Some(drive) => {
+            let sectors = drive.sector_count();
+            let size_mb = (sectors * 512) / (1024 * 1024);
+            println!("  ✓ Detected ATA drive: {} sectors (~{} MB)", sectors, size_mb);
 
-    // Create in-memory FAT32 filesystem
-    let device = Box::new(MockFat32Device::new());
+            // Try to mount as FAT32
+            println!("  ◈ Attempting to mount FAT32 filesystem...");
+            match Fat32::new(Box::new(drive)) {
+                Ok(fs) => {
+                    println!("  ✓ FAT32 filesystem mounted successfully!");
 
-    match Fat32::new(device) {
-        Ok(fs) => {
-            println!("  ✓ RAM disk created and mounted!");
-
-            // Mount globally
-            vfs_global::mount(Box::new(fs));
-            println!("  ✓ Filesystem accessible (vfs-ls, vfs-cat)");
-            println!();
-            println!("  Files available:");
-            println!("    /README.TXT - Welcome message");
-            println!("    /TEST.TXT   - Test file");
+                    // Mount globally so shell commands can access it
+                    vfs_global::mount(Box::new(fs));
+                    println!("  ✓ Filesystem mounted at / (accessible via shell)");
+                    println!();
+                    println!("  Try: vfs-ls / to list files");
+                }
+                Err(e) => {
+                    println!("  ✗ Failed to mount FAT32: {}", e);
+                    println!("  (Drive may not be FAT32 formatted)");
+                }
+            }
         }
-        Err(e) => {
-            println!("  ✗ Failed to create RAM disk: {}", e);
+        None => {
+            println!("  ⚠ No ATA drive detected");
+            println!("  (Use QEMU with -hda <disk.img> to attach a disk)");
         }
     }
-
-    println!();
-    println!("  Note: ATA driver postponed - RAM disk used instead");
 }
 
 /// Initialize the Heartwood's core systems
