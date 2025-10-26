@@ -437,6 +437,12 @@ fn execute_command(input: &str) {
         "help" => cmd_help(),
         "preempt" => cmd_preempt(args),
         "uptime" => cmd_uptime(),
+        // Filesystem commands (Eldarin naming)
+        "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
+        "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
+        "whereami" => cmd_vfs_pwd(),       // vfs-pwd → whereami
+
+        // Legacy VFS commands (for compatibility)
         "vfs-test" => cmd_vfs_test(),
         "vfs-info" => cmd_vfs_info(),
         "vfs-ls" => cmd_vfs_ls(args),
@@ -557,11 +563,14 @@ fn show_help_page(page: usize) {
             crate::println!("  clear              - Clear the screen");
             crate::println!();
             crate::println!("═══════════════════════════════════════════════════");
-            crate::println!("Filesystem (VFS) Testing:");
+            crate::println!("World-Tree Navigation (Filesystem):");
+            crate::println!("  reveal [path]      - Reveal the Tree's nature (list directory)");
+            crate::println!("  recite <file>      - Recite a scroll's contents (read file)");
+            crate::println!("  whereami           - Show your place upon the Tree");
+            crate::println!();
+            crate::println!("Filesystem Testing (Legacy):");
             crate::println!("  vfs-test           - Run comprehensive FAT32 driver tests");
             crate::println!("  vfs-info           - Show mounted filesystem information");
-            crate::println!("  vfs-ls [path]      - List directory contents (default: /)");
-            crate::println!("  vfs-cat <file>     - Display file contents");
             crate::println!();
             crate::println!("─── Press ENTER for next page (2/3) ───");
         }
@@ -975,7 +984,7 @@ fn cmd_vfs_ls(args: &str) {
         }
     };
 
-    crate::println!("◈ Directory listing: {}", path);
+    crate::println!("◈ The World-Tree reveals: {}", path);
     crate::println!();
 
     match fs.read_dir(&Path::new(path)) {
@@ -1005,8 +1014,9 @@ fn cmd_vfs_cat(args: &str) {
     use crate::vfs::global as vfs_global;
 
     if args.is_empty() {
-        crate::println!("Usage: vfs-cat <filename>");
-        crate::println!("Example: vfs-cat /README.TXT");
+        crate::println!("Usage: recite <scroll>");
+        crate::println!("Example: recite /README.TXT");
+        crate::println!("(Legacy: vfs-cat <filename>)");
         return;
     }
 
@@ -1057,4 +1067,12 @@ fn cmd_vfs_cat(args: &str) {
             crate::println!("  ✗ Error reading file: {:?}", e);
         }
     }
+}
+
+/// WHEREAMI - Show current position in the World-Tree
+fn cmd_vfs_pwd() {
+    // For now, we always show root since we don't have cd yet
+    crate::println!("◈ You stand upon the branch: /");
+    crate::println!();
+    crate::println!("(The root of the World-Tree, where all paths begin)");
 }
