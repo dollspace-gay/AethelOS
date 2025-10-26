@@ -9,7 +9,7 @@
 //! - Backup boot sector location (for redundancy)
 
 use super::super::block_device::BlockDevice;
-use alloc::string::{String, ToString};
+// String types removed - using fixed byte arrays instead
 
 /// FSInfo (File System Information) structure
 ///

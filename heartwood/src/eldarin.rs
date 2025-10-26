@@ -193,6 +193,7 @@ pub(crate) static mut PAGING_PAGE: usize = 0;
 pub enum PagingCommand {
     Help,
     Wards,
+    Sigils,
 }
 
 pub(crate) static mut PAGING_COMMAND: Option<PagingCommand> = None;
@@ -364,6 +365,7 @@ pub fn poll() {
                 match PAGING_COMMAND {
                     Some(PagingCommand::Help) => show_help_page(PAGING_PAGE),
                     Some(PagingCommand::Wards) => crate::wards_command::show_wards_page(PAGING_PAGE),
+                    Some(PagingCommand::Sigils) => crate::sigils_command::show_sigils_page(PAGING_PAGE),
                     None => {
                         // Safety: should never happen
                         PAGING_ACTIVE = false;

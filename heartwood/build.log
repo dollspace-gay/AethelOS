@@ -1,0 +1,49 @@
+   Compiling heartwood v0.1.0 (F:\OS\heartwood)
+warning: associated function `new` is never used
+  --> heartwood\src\mana_pool\capability.rs:51:19
+   |
+49 | impl CapabilityId {
+   | ----------------- associated function in this implementation
+50 |     /// Create a new capability ID
+51 |     pub(crate) fn new(id: u64) -> Self {
+   |                   ^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `seal` is never read
+  --> heartwood\src\mana_pool\capability.rs:95:5
+   |
+83 | pub struct SealedCapability {
+   |            ---------------- field in this struct
+...
+95 |     seal: [u8; 32],
+   |     ^^^^
+   |
+   = note: `SealedCapability` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated functions `debug_str`, `identify`, `read_sector_count`, `wait_not_busy`, `wait_400ns`, and `tiny_delay` are never used
+   --> heartwood\src\drivers\ata.rs:214:8
+    |
+ 54 | impl AtaDrive {
+    | ------------- associated functions in this implementation
+...
+214 |     fn debug_str(s: &[u8]) {
+    |        ^^^^^^^^^
+...
+249 |     fn identify(bus: u16, drive: u8) -> bool {
+    |        ^^^^^^^^
+...
+305 |     fn read_sector_count(bus: u16, drive: u8) -> u64 {
+    |        ^^^^^^^^^^^^^^^^^
+...
+435 |     fn wait_not_busy(bus: u16) -> bool {
+    |        ^^^^^^^^^^^^^
+...
+447 |     fn wait_400ns(bus: u16) {
+    |        ^^^^^^^^^^
+...
+454 |     fn tiny_delay() {
+    |        ^^^^^^^^^^
+
+warning: `heartwood` (lib) generated 3 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.76s
