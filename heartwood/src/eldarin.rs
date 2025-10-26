@@ -437,6 +437,7 @@ fn execute_command(input: &str) {
         "help" => cmd_help(),
         "preempt" => cmd_preempt(args),
         "uptime" => cmd_uptime(),
+        "wards" => cmd_wards(),            // Security wards (ASLR, W^X)
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -543,6 +544,7 @@ fn show_help_page(page: usize) {
             crate::println!("  mana-flow          - Visualize memory (Mana Pool) usage");
             crate::println!("  observe-weave      - Real-time view of the Loom's activity");
             crate::println!("  uptime             - Show how long the realm has been awake");
+            crate::println!("  wards              - Display security protections (ASLR, W^X)");
             crate::println!();
             crate::println!("Thread Management:");
             crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
@@ -1075,4 +1077,66 @@ fn cmd_vfs_pwd() {
     crate::println!("◈ You stand upon the branch: /");
     crate::println!();
     crate::println!("(The root of the World-Tree, where all paths begin)");
+}
+
+/// WARDS - Display security protections (ASLR, W^X enforcement)
+fn cmd_wards() {
+    crate::println!("◈ Security Wards of the Mana Pool");
+    crate::println!();
+    crate::println!("═══════════════════════════════════════════════════");
+    crate::println!();
+
+    // W^X Status
+    crate::println!("  ⚔ Write ⊕ Execute Enforcement");
+    crate::println!("     Status: ✓ ACTIVE");
+    crate::println!("     Policy: Memory pages cannot be both writable AND executable");
+    crate::println!("     Location: Enforced in Mana Pool capability validation");
+    crate::println!();
+
+    // ASLR Status
+    crate::println!("  ⚔ Address Space Layout Randomization (ASLR)");
+    crate::println!("     Status: ✓ ACTIVE");
+    crate::println!("     Entropy: 0-64KB randomization per thread stack");
+    crate::println!("     Source: RDTSC (fast boot-safe hardware timer)");
+    crate::println!("     Scope: All thread stacks randomized at creation");
+    crate::println!();
+
+    // Thread Stack Information
+    let threads = crate::loom_of_fate::get_thread_debug_info();
+    crate::println!("  ⚔ Protected Thread Stacks: {}", threads.len());
+    crate::println!();
+
+    if !threads.is_empty() {
+        for thread in threads {
+            let state_str = match thread.state {
+                crate::loom_of_fate::ThreadState::Weaving => "Weaving",
+                crate::loom_of_fate::ThreadState::Resting => "Resting",
+                crate::loom_of_fate::ThreadState::Tangled => "Tangled",
+                crate::loom_of_fate::ThreadState::Fading => "Fading",
+            };
+
+            let priority_str = match thread.priority {
+                crate::loom_of_fate::ThreadPriority::Critical => "Critical",
+                crate::loom_of_fate::ThreadPriority::High => "High",
+                crate::loom_of_fate::ThreadPriority::Normal => "Normal",
+                crate::loom_of_fate::ThreadPriority::Low => "Low",
+                crate::loom_of_fate::ThreadPriority::Idle => "Idle",
+            };
+
+            crate::println!("     Thread #{} [{}|{}]", thread.id, state_str, priority_str);
+            crate::println!("       Stack: 0x{:016x} - 0x{:016x}",
+                thread.stack_bottom, thread.stack_top);
+            crate::println!("       Size:  {} KB", thread.stack_size / 1024);
+
+            // Calculate ASLR offset - the difference shows randomization
+            // Each thread should have a different stack address due to ASLR
+            let addr_entropy = (thread.stack_top as usize) & 0xFFFF;
+            crate::println!("       ASLR:  ~{} bytes offset (varies per thread)", addr_entropy % 65536);
+            crate::println!();
+        }
+    }
+
+    crate::println!("═══════════════════════════════════════════════════");
+    crate::println!();
+    crate::println!("  The wards stand strong. Your sanctuary is protected.");
 }

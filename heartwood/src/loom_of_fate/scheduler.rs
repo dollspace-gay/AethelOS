@@ -12,7 +12,7 @@ const MAX_THREADS: usize = 1024;
 
 /// The harmony-based cooperative/preemptive scheduler
 pub struct Scheduler {
-    threads: Vec<Thread>,
+    pub(crate) threads: Vec<Thread>,
     stacks: Vec<Stack>,  // Stack storage (owned by scheduler)
     ready_queue: VecDeque<ThreadId>,
     current_thread: Option<ThreadId>,

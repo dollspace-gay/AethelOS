@@ -267,6 +267,43 @@ pub fn stats() -> SchedulerStats {
     })
 }
 
+/// Thread debug information for security ward display
+#[derive(Debug, Clone, Copy)]
+pub struct ThreadDebugInfo {
+    pub id: u64,
+    pub stack_bottom: u64,
+    pub stack_top: u64,
+    pub stack_size: u64,
+    pub state: ThreadState,
+    pub priority: ThreadPriority,
+}
+
+/// Get debug information for all active threads
+///
+/// Returns detailed information about each thread's stack layout,
+/// useful for verifying ASLR randomization and memory layout.
+pub fn get_thread_debug_info() -> alloc::vec::Vec<ThreadDebugInfo> {
+    without_interrupts(|| {
+        unsafe {
+            let loom = get_loom().lock();
+            loom.threads.iter()
+                .filter(|t| !matches!(t.state, ThreadState::Fading))
+                .map(|t| {
+                    let stack_size = t.stack_top.saturating_sub(t.stack_bottom);
+                    ThreadDebugInfo {
+                        id: t.id.0,
+                        stack_bottom: t.stack_bottom,
+                        stack_top: t.stack_top,
+                        stack_size,
+                        state: t.state,
+                        priority: t.priority,
+                    }
+                })
+                .collect()
+        }
+    })
+}
+
 // === Preemptive Multitasking Control ===
 
 /// Enable preemptive multitasking with the given time quantum

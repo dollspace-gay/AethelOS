@@ -87,7 +87,8 @@
       "Bash(cmd /c \"dir aethelos.iso\")",
       "Bash(cmd /c:*)",
       "Bash(cargo test:*)",
-      "Bash(wsl tail:*)"
+      "Bash(wsl tail:*)",
+      "Bash(wsl wc:*)"
     ],
     "deny": [],
     "ask": []
