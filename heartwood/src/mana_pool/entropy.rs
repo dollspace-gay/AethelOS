@@ -74,6 +74,13 @@ impl ChaCha8Rng {
         Self::from_seed(seed)
     }
 
+    /// Create ChaCha8 RNG using fast RDTSC-only seeding (boot-safe)
+    /// Use this during early boot when RDRAND might not be available
+    pub fn from_hardware_fast() -> Self {
+        let seed = HardwareRng::fast_u64();
+        Self::from_seed(seed)
+    }
+
     /// Create a new ChaCha8 RNG from a 64-bit seed
     pub fn from_seed(seed: u64) -> Self {
         let mut state = [0u32; 16];

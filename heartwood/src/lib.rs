@@ -43,6 +43,7 @@ pub mod attunement;
 pub mod vga_buffer;
 pub mod rtl;  // Runtime library with memcpy, etc.
 pub mod eldarin;  // The Eldarin Shell
+pub mod wards_command;  // Security wards command
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer
 pub mod drivers;  // Hardware device drivers

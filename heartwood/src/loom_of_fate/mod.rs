@@ -120,7 +120,7 @@ pub fn spawn(entry_point: fn() -> !, priority: ThreadPriority) -> Result<ThreadI
 
 /// Execute a closure with interrupts disabled
 /// This prevents deadlocks when acquiring locks that might be used in interrupt handlers
-fn without_interrupts<F, R>(f: F) -> R
+pub(crate) fn without_interrupts<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {

@@ -1,6 +1,7 @@
 //! Object Manager - Manages memory as abstract objects
 
-use super::capability::{Capability, CapabilityRights};
+use super::capability::{Capability, CapabilityRights, CapabilityId, SealedCapability};
+use super::capability_table::{CapabilityTable, CapabilityError};
 use super::{AllocationPurpose, ManaError};
 use alloc::collections::BTreeMap;
 
@@ -34,6 +35,9 @@ struct Object {
 pub struct ObjectManager {
     objects: BTreeMap<ObjectHandle, Object>,
     next_handle: u64,
+    /// Capability table - maps opaque IDs to sealed capabilities
+    /// This enforces the opaque handle security model
+    capability_table: CapabilityTable,
 }
 
 impl Default for ObjectManager {
@@ -47,6 +51,7 @@ impl ObjectManager {
         Self {
             objects: BTreeMap::new(),
             next_handle: 1, // 0 is reserved as invalid
+            capability_table: CapabilityTable::new(),
         }
     }
 
@@ -200,6 +205,137 @@ impl ObjectManager {
             purpose: object.purpose,
             ref_count: object.ref_count,
         })
+    }
+
+    // ==================== SEALED CAPABILITY METHODS ====================
+
+    /// Create object and return OPAQUE capability ID (not the capability itself!)
+    ///
+    /// This is the secure API that enforces opaque handles:
+    /// - Creates object
+    /// - Creates sealed capability with cryptographic seal
+    /// - Stores capability in table
+    /// - Returns ONLY the opaque ID to caller
+    ///
+    /// # Security
+    /// Caller never sees the actual capability, only the meaningless ID.
+    /// Without access to the capability table, the ID is useless.
+    pub fn create_object_sealed(
+        &mut self,
+        address: usize,
+        size: usize,
+        purpose: AllocationPurpose,
+        rights: CapabilityRights,
+    ) -> Result<CapabilityId, ManaError> {
+        // Create the object
+        let handle = ObjectHandle(self.next_handle);
+        self.next_handle += 1;
+
+        let object = Object {
+            handle,
+            object_type: ObjectType::Memory,
+            address,
+            size,
+            purpose,
+            ref_count: 1,
+        };
+
+        self.objects.insert(handle, object);
+
+        // Create sealed capability
+        let sealed_cap = SealedCapability::new(handle, rights);
+
+        // Store in capability table
+        let cap_id = self.capability_table.insert(sealed_cap)
+            .map_err(|_| ManaError::CapabilityTableFull)?;
+
+        // Return only the opaque ID!
+        Ok(cap_id)
+    }
+
+    /// Get object info using capability ID (validates seal)
+    ///
+    /// # Security
+    /// - Looks up capability by ID (prevents forgery)
+    /// - Validates cryptographic seal (prevents tampering)
+    /// - Checks rights before allowing access
+    pub fn get_object_info_sealed(&self, cap_id: CapabilityId) -> Result<ObjectInfo, ManaError> {
+        // Lookup and validate capability
+        let cap = self.capability_table.get(cap_id)
+            .map_err(|e| match e {
+                CapabilityError::InvalidId => ManaError::InvalidCapability,
+                CapabilityError::SealBroken => ManaError::SecurityViolation,
+                _ => ManaError::InvalidCapability,
+            })?;
+
+        // Get object
+        let object = self.objects.get(&cap.handle)
+            .ok_or(ManaError::InvalidHandle)?;
+
+        Ok(ObjectInfo {
+            object_type: object.object_type,
+            size: object.size,
+            purpose: object.purpose,
+            ref_count: object.ref_count,
+        })
+    }
+
+    /// Release object using capability ID
+    pub fn release_object_sealed(&mut self, cap_id: CapabilityId) -> Result<(), ManaError> {
+        // Lookup and validate capability
+        let cap = self.capability_table.get(cap_id)
+            .map_err(|e| match e {
+                CapabilityError::InvalidId => ManaError::InvalidCapability,
+                CapabilityError::SealBroken => ManaError::SecurityViolation,
+                _ => ManaError::InvalidCapability,
+            })?;
+
+        let handle = cap.handle;
+
+        // Remove from capability table (revoke access)
+        self.capability_table.remove(cap_id);
+
+        // Decrement ref count
+        let object = self.objects.get_mut(&handle)
+            .ok_or(ManaError::InvalidHandle)?;
+
+        if object.ref_count == 0 {
+            return Err(ManaError::AlreadyReleased);
+        }
+
+        object.ref_count -= 1;
+
+        if object.ref_count == 0 {
+            // Free the object
+            self.objects.remove(&handle);
+        }
+
+        Ok(())
+    }
+
+    /// Derive a new sealed capability with reduced rights
+    ///
+    /// # Security
+    /// Can only reduce rights (attenuation), never amplify.
+    pub fn derive_capability_sealed(&mut self, parent_id: CapabilityId, new_rights: CapabilityRights) -> Result<CapabilityId, ManaError> {
+        self.capability_table.derive(parent_id, new_rights)
+            .map_err(|e| match e {
+                CapabilityError::InvalidId => ManaError::InvalidCapability,
+                CapabilityError::SealBroken => ManaError::SecurityViolation,
+                CapabilityError::TableFull => ManaError::CapabilityTableFull,
+                _ => ManaError::InvalidCapability,
+            })
+    }
+
+    /// Check if capability ID grants specific rights
+    pub fn check_capability_rights(&self, cap_id: CapabilityId, required: CapabilityRights) -> Result<(), ManaError> {
+        self.capability_table.check_rights(cap_id, required)
+            .map_err(|e| match e {
+                CapabilityError::InvalidId => ManaError::InvalidCapability,
+                CapabilityError::SealBroken => ManaError::SecurityViolation,
+                CapabilityError::PermissionDenied => ManaError::PermissionDenied,
+                _ => ManaError::InvalidCapability,
+            })
     }
 }
 

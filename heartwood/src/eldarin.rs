@@ -185,9 +185,17 @@ static mut BUFFER_INITIALIZED: bool = false;
 static mut COMMAND_HISTORY: MaybeUninit<InterruptSafeLock<CommandHistory>> = MaybeUninit::uninit();
 static mut HISTORY_INITIALIZED: bool = false;
 
-/// Paging state for help menu
-static mut PAGING_ACTIVE: bool = false;
-static mut PAGING_PAGE: usize = 0;
+/// Paging state for multi-page commands
+pub(crate) static mut PAGING_ACTIVE: bool = false;
+pub(crate) static mut PAGING_PAGE: usize = 0;
+
+#[derive(Clone, Copy)]
+pub enum PagingCommand {
+    Help,
+    Wards,
+}
+
+pub(crate) static mut PAGING_COMMAND: Option<PagingCommand> = None;
 
 /// Initialize the shell
 pub fn init() {
@@ -351,7 +359,18 @@ pub fn poll() {
                     buffer.clear();
                 }
                 PAGING_PAGE += 1;
-                show_help_page(PAGING_PAGE);
+
+                // Call the appropriate paging function
+                match PAGING_COMMAND {
+                    Some(PagingCommand::Help) => show_help_page(PAGING_PAGE),
+                    Some(PagingCommand::Wards) => crate::wards_command::show_wards_page(PAGING_PAGE),
+                    None => {
+                        // Safety: should never happen
+                        PAGING_ACTIVE = false;
+                        PAGING_PAGE = 0;
+                        display_prompt();
+                    }
+                }
                 return;
             }
 
@@ -528,6 +547,7 @@ fn cmd_help() {
     unsafe {
         PAGING_ACTIVE = true;
         PAGING_PAGE = 0;
+        PAGING_COMMAND = Some(PagingCommand::Help);
     }
     show_help_page(0);
 }
@@ -591,6 +611,7 @@ fn show_help_page(page: usize) {
             unsafe {
                 PAGING_ACTIVE = false;
                 PAGING_PAGE = 0;
+                PAGING_COMMAND = None;
             }
             display_prompt();
         }
@@ -599,6 +620,7 @@ fn show_help_page(page: usize) {
             unsafe {
                 PAGING_ACTIVE = false;
                 PAGING_PAGE = 0;
+                PAGING_COMMAND = None;
             }
             display_prompt();
         }
@@ -1081,62 +1103,6 @@ fn cmd_vfs_pwd() {
 
 /// WARDS - Display security protections (ASLR, W^X enforcement)
 fn cmd_wards() {
-    crate::println!("◈ Security Wards of the Mana Pool");
-    crate::println!();
-    crate::println!("═══════════════════════════════════════════════════");
-    crate::println!();
-
-    // W^X Status
-    crate::println!("  ⚔ Write ⊕ Execute Enforcement");
-    crate::println!("     Status: ✓ ACTIVE");
-    crate::println!("     Policy: Memory pages cannot be both writable AND executable");
-    crate::println!("     Location: Enforced in Mana Pool capability validation");
-    crate::println!();
-
-    // ASLR Status
-    crate::println!("  ⚔ Address Space Layout Randomization (ASLR)");
-    crate::println!("     Status: ✓ ACTIVE");
-    crate::println!("     Entropy: 0-64KB randomization per thread stack");
-    crate::println!("     Source: RDTSC (fast boot-safe hardware timer)");
-    crate::println!("     Scope: All thread stacks randomized at creation");
-    crate::println!();
-
-    // Thread Stack Information
-    let threads = crate::loom_of_fate::get_thread_debug_info();
-    crate::println!("  ⚔ Protected Thread Stacks: {}", threads.len());
-    crate::println!();
-
-    if !threads.is_empty() {
-        for thread in threads {
-            let state_str = match thread.state {
-                crate::loom_of_fate::ThreadState::Weaving => "Weaving",
-                crate::loom_of_fate::ThreadState::Resting => "Resting",
-                crate::loom_of_fate::ThreadState::Tangled => "Tangled",
-                crate::loom_of_fate::ThreadState::Fading => "Fading",
-            };
-
-            let priority_str = match thread.priority {
-                crate::loom_of_fate::ThreadPriority::Critical => "Critical",
-                crate::loom_of_fate::ThreadPriority::High => "High",
-                crate::loom_of_fate::ThreadPriority::Normal => "Normal",
-                crate::loom_of_fate::ThreadPriority::Low => "Low",
-                crate::loom_of_fate::ThreadPriority::Idle => "Idle",
-            };
-
-            crate::println!("     Thread #{} [{}|{}]", thread.id, state_str, priority_str);
-            crate::println!("       Stack: 0x{:016x} - 0x{:016x}",
-                thread.stack_bottom, thread.stack_top);
-            crate::println!("       Size:  {} KB", thread.stack_size / 1024);
-
-            // Calculate ASLR offset - the difference shows randomization
-            // Each thread should have a different stack address due to ASLR
-            let addr_entropy = (thread.stack_top as usize) & 0xFFFF;
-            crate::println!("       ASLR:  ~{} bytes offset (varies per thread)", addr_entropy % 65536);
-            crate::println!();
-        }
-    }
-
-    crate::println!("═══════════════════════════════════════════════════");
-    crate::println!();
-    crate::println!("  The wards stand strong. Your sanctuary is protected.");
+    // Delegate to the paged wards command with capability testing
+    crate::wards_command::cmd_wards();
 }

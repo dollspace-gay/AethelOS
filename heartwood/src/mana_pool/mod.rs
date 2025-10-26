@@ -17,6 +17,7 @@
 
 pub mod object_manager;
 pub mod capability;
+pub mod capability_table;  // Opaque capability handle mapping
 pub mod sanctuary;
 pub mod ephemeral_mist;
 pub mod allocator;
@@ -24,9 +25,11 @@ pub mod interrupt_lock;
 pub mod buddy;
 pub mod entropy;  // Random number generation for ASLR
 pub mod aslr;     // Address Space Layout Randomization
+pub mod sealing;  // Cryptographic capability sealing
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
-pub use capability::{Capability, CapabilityRights};
+pub use capability::{Capability, CapabilityRights, CapabilityId, SealedCapability};
+pub use capability_table::{CapabilityTable, CapabilityError};
 pub use sanctuary::Sanctuary;
 pub use ephemeral_mist::EphemeralMist;
 pub use interrupt_lock::InterruptSafeLock;
@@ -40,7 +43,7 @@ static mut MANA_POOL: MaybeUninit<InterruptSafeLock<Box<ManaPool>>> = MaybeUnini
 static mut MANA_POOL_INITIALIZED: bool = false;
 
 pub struct ManaPool {
-    object_manager: ObjectManager,
+    pub(crate) object_manager: ObjectManager,
     sanctuary: Sanctuary,
     ephemeral_mist: EphemeralMist,
 }
@@ -185,7 +188,7 @@ pub fn init() {
 }
 
 /// Get reference to MANA_POOL (assumes initialized)
-unsafe fn get_mana_pool() -> &'static InterruptSafeLock<Box<ManaPool>> {
+pub(crate) unsafe fn get_mana_pool() -> &'static InterruptSafeLock<Box<ManaPool>> {
     &*core::ptr::addr_of!(MANA_POOL).cast::<InterruptSafeLock<Box<ManaPool>>>()
 }
 
@@ -272,4 +275,8 @@ pub enum ManaError {
     /// SECURITY: Attempting to create a capability with both WRITE and EXECUTE rights
     /// This violates the W^X (Write XOR Execute) security policy
     SecurityViolation,
+    /// SECURITY: Permission denied - capability doesn't grant required rights
+    PermissionDenied,
+    /// Capability table is full (DOS protection)
+    CapabilityTableFull,
 }

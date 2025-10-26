@@ -187,6 +187,12 @@ fn heartwood_init() {
     unsafe { serial_out(b'D'); }
     println!("  ✓ Mana Pool ready");
 
+    // Initialize capability sealing (must be after Mana Pool, before capabilities are created)
+    unsafe { serial_out(b'S'); }
+    println!("◈ Forging security wards...");
+    unsafe { mana_pool::sealing::init(); }
+    println!("  ✓ Capability sealing ready (HMAC-SHA256)");
+
     // Initialize the Nexus (IPC)
     unsafe { serial_out(b'E'); }
     println!("◈ Opening the Nexus...");

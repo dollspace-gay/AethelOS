@@ -29,6 +29,7 @@ name = "heartwood"
 version = "0.1.0"
 dependencies = [
  "bitflags 1.3.2",
+ "hmac-sha256",
  "lazy_static",
  "pic8259",
  "spin",
@@ -38,6 +39,12 @@ dependencies = [
 [[package]]
 name = "heartwood_loader"
 version = "0.1.0"
+
+[[package]]
+name = "hmac-sha256"
+version = "1.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad6880c8d4a9ebf39c6e8b77007ce223f646a4d21ce29d99f70cb16420545425"
 
 [[package]]
 name = "lanthir_grove"
