@@ -108,6 +108,42 @@ pub extern "C" fn _start() -> ! {
     }
 }
 
+/// Mount storage - using RAM disk since ATA driver has issues
+fn detect_and_mount_storage() {
+    use heartwood::vfs::mock_fat32::MockFat32Device;
+    use heartwood::vfs::fat32::Fat32;
+    use heartwood::vfs::global as vfs_global;
+    use alloc::boxed::Box;
+
+    // Initialize global VFS
+    vfs_global::init();
+
+    println!("  ◈ Creating RAM disk (64KB FAT32 filesystem)...");
+
+    // Create in-memory FAT32 filesystem
+    let device = Box::new(MockFat32Device::new());
+
+    match Fat32::new(device) {
+        Ok(fs) => {
+            println!("  ✓ RAM disk created and mounted!");
+
+            // Mount globally
+            vfs_global::mount(Box::new(fs));
+            println!("  ✓ Filesystem accessible (vfs-ls, vfs-cat)");
+            println!();
+            println!("  Files available:");
+            println!("    /README.TXT - Welcome message");
+            println!("    /TEST.TXT   - Test file");
+        }
+        Err(e) => {
+            println!("  ✗ Failed to create RAM disk: {}", e);
+        }
+    }
+
+    println!();
+    println!("  Note: ATA driver postponed - RAM disk used instead");
+}
+
 /// Initialize the Heartwood's core systems
 fn heartwood_init() {
     unsafe { serial_out(b'A'); } // Before init sequence
@@ -162,6 +198,12 @@ fn heartwood_init() {
     heartwood::eldarin::init();
     unsafe { serial_out(b'M'); }
     println!("  ✓ Shell ready");
+
+    // Detect ATA drives and mount filesystem
+    unsafe { serial_out(b'N'); }
+    println!("◈ Detecting storage devices...");
+    detect_and_mount_storage();
+    unsafe { serial_out(b'O'); }
 
     unsafe { serial_out(b'K'); }
     println!("\n◈ Heartwood initialization complete!");

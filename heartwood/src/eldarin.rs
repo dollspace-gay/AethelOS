@@ -946,65 +946,31 @@ fn cmd_vfs_test() {
 
 /// VFS Info - Show filesystem information
 fn cmd_vfs_info() {
-    use crate::vfs::mock_fat32::MockFat32Device;
-    use crate::vfs::fat32::Fat32;
-    use alloc::boxed::Box;
-
-    crate::println!("◈ Filesystem Information");
-    crate::println!();
-
-    let device = Box::new(MockFat32Device::new());
-    let fat32 = match Fat32::new(device) {
-        Ok(fs) => fs,
-        Err(e) => {
-            crate::println!("Failed to mount: {:?}", e);
-            return;
-        }
-    };
-
-    crate::println!("  Filesystem Type:    {}", fat32.bpb.fs_type);
-    crate::println!("  Volume Label:       {}", fat32.bpb.volume_label);
-    crate::println!();
-    crate::println!("  Geometry:");
-    crate::println!("    Bytes per sector: {}", fat32.bpb.bytes_per_sector);
-    crate::println!("    Sectors/cluster:  {}", fat32.bpb.sectors_per_cluster);
-    crate::println!("    Cluster size:     {} bytes", fat32.bpb.cluster_size());
-    crate::println!("    Total sectors:    {}", fat32.bpb.total_sectors);
-    crate::println!();
-    crate::println!("  FAT Information:");
-    crate::println!("    Number of FATs:   {}", fat32.bpb.num_fats);
-    crate::println!("    Sectors per FAT:  {}", fat32.bpb.sectors_per_fat);
-    crate::println!("    Root cluster:     {}", fat32.bpb.root_cluster);
-    crate::println!();
-    crate::println!("  Special Sectors:");
-    crate::println!("    FSInfo sector:    {}", fat32.bpb.fsinfo_sector);
-    crate::println!("    Backup boot:      {}", fat32.bpb.backup_boot_sector);
-
-    if let Some(free) = fat32.bpb.free_clusters() {
-        crate::println!();
-        crate::println!("  Space (from FSInfo):");
-        crate::println!("    Free clusters:    {}", free);
-        if let Some(space) = fat32.bpb.free_space() {
-            crate::println!("    Free space:       {} KB ({} MB)",
-                space / 1024, space / 1024 / 1024);
-        }
-    }
+    crate::vfs::debug_cmd::show_mount_status();
 }
 
 /// VFS LS - List directory contents
 fn cmd_vfs_ls(args: &str) {
     use crate::vfs::{FileSystem, Path};
-    use crate::vfs::mock_fat32::MockFat32Device;
-    use crate::vfs::fat32::Fat32;
-    use alloc::boxed::Box;
+    use crate::vfs::global as vfs_global;
 
     let path = if args.is_empty() { "/" } else { args.trim() };
 
-    let device = Box::new(MockFat32Device::new());
-    let fat32 = match Fat32::new(device) {
-        Ok(fs) => fs,
-        Err(e) => {
-            crate::println!("Failed to mount: {:?}", e);
+    // Get global filesystem
+    let global_fs = match vfs_global::get() {
+        Some(fs) => fs,
+        None => {
+            crate::println!("  ✗ No filesystem mounted");
+            crate::println!("  (Reboot with -hda disk.img to mount a drive)");
+            return;
+        }
+    };
+
+    let fs_lock = global_fs.lock();
+    let fs = match &*fs_lock {
+        Some(filesystem) => filesystem,
+        None => {
+            crate::println!("  ✗ No filesystem mounted");
             return;
         }
     };
@@ -1012,7 +978,7 @@ fn cmd_vfs_ls(args: &str) {
     crate::println!("◈ Directory listing: {}", path);
     crate::println!();
 
-    match fat32.read_dir(&Path::new(path)) {
+    match fs.read_dir(&Path::new(path)) {
         Ok(entries) => {
             let count = entries.len();
             if entries.is_empty() {
@@ -1036,9 +1002,7 @@ fn cmd_vfs_ls(args: &str) {
 /// VFS CAT - Display file contents
 fn cmd_vfs_cat(args: &str) {
     use crate::vfs::{FileSystem, Path};
-    use crate::vfs::mock_fat32::MockFat32Device;
-    use crate::vfs::fat32::Fat32;
-    use alloc::boxed::Box;
+    use crate::vfs::global as vfs_global;
 
     if args.is_empty() {
         crate::println!("Usage: vfs-cat <filename>");
@@ -1048,11 +1012,20 @@ fn cmd_vfs_cat(args: &str) {
 
     let filename = args.trim();
 
-    let device = Box::new(MockFat32Device::new());
-    let fat32 = match Fat32::new(device) {
-        Ok(fs) => fs,
-        Err(e) => {
-            crate::println!("Failed to mount: {:?}", e);
+    // Get global filesystem
+    let global_fs = match vfs_global::get() {
+        Some(fs) => fs,
+        None => {
+            crate::println!("  ✗ No filesystem mounted");
+            return;
+        }
+    };
+
+    let fs_lock = global_fs.lock();
+    let fs = match &*fs_lock {
+        Some(filesystem) => filesystem,
+        None => {
+            crate::println!("  ✗ No filesystem mounted");
             return;
         }
     };
@@ -1060,7 +1033,7 @@ fn cmd_vfs_cat(args: &str) {
     crate::println!("◈ Reading: {}", filename);
     crate::println!();
 
-    match fat32.read(&Path::new(filename)) {
+    match fs.read(&Path::new(filename)) {
         Ok(data) => {
             if let Ok(text) = core::str::from_utf8(&data) {
                 for line in text.lines() {

@@ -45,6 +45,7 @@ pub mod rtl;  // Runtime library with memcpy, etc.
 pub mod eldarin;  // The Eldarin Shell
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer
+pub mod drivers;  // Hardware device drivers
 
 // Re-export key types
 pub use nexus::{Message, MessageType, MessagePriority, NexusError};

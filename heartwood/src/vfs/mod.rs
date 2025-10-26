@@ -13,6 +13,8 @@ pub mod mock;
 pub mod block_device;
 pub mod fat32;
 pub mod mock_fat32;
+pub mod global;
+pub mod debug_cmd;
 
 #[cfg(test)]
 mod tests;
