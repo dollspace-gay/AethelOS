@@ -15,13 +15,15 @@
 extern crate alloc;
 
 // Reference the modules from lib.rs
-use heartwood::{nexus, loom_of_fate, mana_pool, attunement};
+use heartwood::{nexus, loom_of_fate, mana_pool, attunement, drivers};
 
 // Need to use macros with #[macro_use]
 #[macro_use]
 extern crate heartwood;
 
 /// Helper function to write a single character to COM1 serial port
+/// NOTE: Only use this BEFORE serial driver is initialized!
+/// After init, use drivers::serial::write_byte() instead
 unsafe fn serial_out(c: u8) {
     core::arch::asm!(
         "out dx, al",
@@ -169,26 +171,27 @@ fn heartwood_init() {
     heartwood::vga_buffer::initialize();
     unsafe { serial_out(b'b'); }
 
+    // Initialize serial port (COM1 at 115200 baud, 8N1)
+    unsafe {
+        drivers::serial::init();
+        drivers::serial::write_str("AethelOS serial port initialized\n");
+    }
+
     // Display boot banner
     heartwood::vga_buffer::print_banner();
     println!("◈ Initializing Heartwood subsystems...");
 
     // Initialize the global allocator FIRST (before any heap allocations!)
-    unsafe { serial_out(b'@'); }
     println!("◈ Initializing global allocator...");
     heartwood::init_global_allocator();
-    unsafe { serial_out(b'#'); }
     println!("  ✓ Buddy allocator ready (4MB heap)");
 
     // Initialize the Mana Pool (memory management)
-    unsafe { serial_out(b'C'); }
     println!("◈ Awakening Mana Pool...");
     mana_pool::init();
-    unsafe { serial_out(b'D'); }
     println!("  ✓ Mana Pool ready");
 
     // Initialize capability sealing (must be after Mana Pool, before capabilities are created)
-    unsafe { serial_out(b'S'); }
     println!("◈ Forging security wards...");
     unsafe { mana_pool::sealing::init(); }
     println!("  ✓ Capability sealing ready (HMAC-SHA256)");
@@ -207,17 +210,13 @@ fn heartwood_init() {
     println!("    Protecting all functions with buffers or address-taken locals");
 
     // Initialize the Nexus (IPC)
-    unsafe { serial_out(b'E'); }
     println!("◈ Opening the Nexus...");
     nexus::init();
-    unsafe { serial_out(b'F'); }
     println!("  ✓ Nexus established");
 
     // Initialize the Loom of Fate (scheduler)
-    unsafe { serial_out(b'G'); }
     println!("◈ Weaving the Loom of Fate...");
     loom_of_fate::init();
-    unsafe { serial_out(b'H'); }
     println!("  ✓ Loom ready");
 
     // Initialize heap canaries (after thread creation to avoid early boot issues)
@@ -243,10 +242,8 @@ fn heartwood_init() {
 
     // Initialize the Attunement Layer (this includes IDT initialization)
     // IMPORTANT: Must happen before sealing, as IDT is in .rune section
-    unsafe { serial_out(b'I'); }
     println!("◈ Attuning to hardware...");
     attunement::init();
-    unsafe { serial_out(b'J'); }
     println!("  ✓ Attunement complete");
 
     // Initialize security policy (must be before sealing)
@@ -256,29 +253,23 @@ fn heartwood_init() {
     mana_pool::security_policy::display_policy();
 
     // Initialize the Eldarin Shell
-    unsafe { serial_out(b'L'); }
     println!("◈ Awakening the Eldarin Shell...");
     heartwood::eldarin::init();
-    unsafe { serial_out(b'M'); }
     println!("  ✓ Shell ready");
 
     // Detect ATA drives and mount filesystem (BEFORE sealing to avoid issues)
-    unsafe { serial_out(b'N'); }
     println!("◈ Detecting storage devices...");
     detect_and_mount_storage();
-    unsafe { serial_out(b'O'); }
     println!();
 
     // Seal The Rune of Permanence (make read-only at MMU level)
     // This must happen AFTER all .rune structures are initialized (IDT, security policy, etc.)
     // AND after disk mounting to avoid page table conflicts
-    // TEMPORARILY DISABLED FOR DEBUGGING
-    println!("◈ Skipping rune sealing for debug...");
-    // unsafe {
-    //     mana_pool::rune_of_permanence::seal_rune_section();
-    // }
+    unsafe {
+        mana_pool::rune_of_permanence::seal_rune_section();
+    }
+    println!("  ✓ Rune of Permanence sealed (kernel data now immutable)");
 
-    unsafe { serial_out(b'K'); }
     println!("\n◈ Heartwood initialization complete!");
     println!();
 }

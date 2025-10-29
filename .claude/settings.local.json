@@ -98,7 +98,15 @@
       "Bash(else echo \"serial.log not found\")",
       "Bash(bd close:*)",
       "Bash(cargo nm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(for file in src/irq_safe_mutex.rs src/main.rs src/rtl.rs src/vga_buffer.rs src/loom_of_fate/mod.rs src/mana_pool/mod.rs src/nexus/mod.rs)",
+      "Bash(do)",
+      "Bash(if [ -f \"$file\" ])",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(for file in src/loom_of_fate/mod.rs src/mana_pool/mod.rs src/nexus/mod.rs src/rtl.rs src/vga_buffer.rs)",
+      "Bash(do echo \"=== $file ===\" grep -A2 \"out dx, al\" \"$file\")"
     ],
     "deny": [],
     "ask": []

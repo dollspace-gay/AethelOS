@@ -73,7 +73,6 @@ impl AtaDrive {
     /// SAFETY: Performs raw I/O port access to detect and initialize ATA drives.
     unsafe fn detect_drive(bus: u16, drive: u8) -> Option<Self> {
         // Serial marker: 'A' = Starting detection
-        Self::debug_char(b'A');
 
         // Step 0: Disable interrupts on ATA controller
         // Write to Device Control Register (0x3F6): set nIEN bit (bit 1)
@@ -89,7 +88,6 @@ impl AtaDrive {
             }
 
             // Step 3: CRITICAL - Wait for BSY to clear BEFORE checking signature
-            Self::debug_char(b'B');  // Waiting for initial BSY clear
             let mut timeout = 0;
             loop {
                 let status = inb(bus + ATA_REG_STATUS);
@@ -98,7 +96,6 @@ impl AtaDrive {
                 }
                 timeout += 1;
                 if timeout > 50000 {  // Reduced from 1000000 for faster timeout
-                    Self::debug_char(b'T');  // Timeout waiting for BSY
                     return None;
                 }
                 core::hint::spin_loop();
@@ -106,64 +103,49 @@ impl AtaDrive {
 
             // Step 4: Check device signature to determine ATA vs ATAPI
             // CRITICAL: Do this BEFORE sending any command!
-            Self::debug_char(b'C');  // Checking signature
 
             let lba_mid = inb(bus + ATA_REG_LBA_MID);
             let lba_high = inb(bus + ATA_REG_LBA_HIGH);
 
             // Debug: show signature bytes
-            Self::debug_hex(lba_mid);
-            Self::debug_hex(lba_high);
 
             // ATAPI signature: 0x14 (LBA mid) / 0xEB (LBA high)
             if lba_mid == 0x14 && lba_high == 0xEB {
-                Self::debug_char(b'P');  // ATAPI device detected
                 return None;  // We don't support ATAPI yet
             }
 
             // ATA signature should be 0x00 / 0x00
             if lba_mid != 0x00 || lba_high != 0x00 {
-                Self::debug_char(b'U');  // Unknown signature
                 return None;
             }
 
             // Step 5: Send correct IDENTIFY command (0xEC for ATA)
-            Self::debug_char(b'D');  // Sending IDENTIFY DEVICE
             outb(bus + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
 
-            Self::debug_char(b'E');  // Command sent successfully!
 
             // Step 6: Wait for drive to process command (BSY to clear, then DRQ to set)
-            Self::debug_char(b'E');  // Waiting for response
             timeout = 0;
             loop {
                 let status = inb(bus + ATA_REG_STATUS);
 
                 // Check if status is 0 (no drive)
                 if status == 0 {
-                    Self::debug_char(b'0');  // No drive
                     return None;
                 }
 
                 // Check for error bit
                 if (status & ATA_STATUS_ERR) != 0 {
                     let error = inb(bus + ATA_REG_ERROR);
-                    Self::debug_char(b'!');  // Error
-                    Self::debug_hex(status);
-                    Self::debug_char(b'E');  // Error register
-                    Self::debug_hex(error);
                     return None;
                 }
 
                 // Check if BSY is clear AND DRQ is set (data ready)
                 if (status & ATA_STATUS_BSY) == 0 && (status & ATA_STATUS_DRQ) != 0 {
-                    Self::debug_char(b'F');  // Data ready!
                     break;
                 }
 
                 timeout += 1;
                 if timeout > 50000 {  // Reduced from 1000000 for faster timeout
-                    Self::debug_char(b'T');  // Timeout
                     return None;
                 }
                 core::hint::spin_loop();
@@ -173,12 +155,10 @@ impl AtaDrive {
             let lba_mid = inb(bus + ATA_REG_LBA_MID);
             let lba_high = inb(bus + ATA_REG_LBA_HIGH);
             if lba_mid != 0 || lba_high != 0 {
-                Self::debug_char(b'P');  // ATAPI detected
                 return None;
             }
 
             // Step 7: Read IDENTIFY data (256 words = 512 bytes)
-            Self::debug_char(b'G');  // Reading data
 
             // Read 256 words (512 bytes) of identify data
             let mut identify_data: [u16; 256] = [0; 256];
@@ -187,7 +167,6 @@ impl AtaDrive {
             }
 
             // Serial marker: 'H' = Parsing sector count
-            Self::debug_char(b'H');
 
             // Parse sector count from words 60-61 (28-bit LBA)
             let sectors_low = identify_data[60] as u32;
@@ -198,7 +177,6 @@ impl AtaDrive {
             let sectors = if sectors > 0 { sectors } else { 2048 };
 
         // Serial marker: 'Z' = Success!
-        Self::debug_char(b'Z');
 
         Some(AtaDrive {
             bus,
@@ -206,43 +184,6 @@ impl AtaDrive {
             sectors,
             sector_size: 512,
         })
-    }
-
-    /// Write a debug string to COM1 serial port
-    ///
-    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
-    fn debug_str(s: &[u8]) {
-        for &byte in s {
-            while (inb(0x3FD) & 0x20) == 0 {}
-            outb(0x3F8, byte);
-        }
-    }
-
-    /// Write a debug character to COM1 serial port with compact prefix
-    ///
-    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
-    fn debug_char(c: u8) {
-        // Use compact format: "*X " - write directly without waiting
-        // to avoid potential conflicts with ATA port access
-        outb(0x3F8, b'*');
-        outb(0x3F8, c);
-        outb(0x3F8, b' ');
-    }
-
-    /// Write a byte as two hex digits to serial port
-    ///
-    /// SAFETY: Must be called from unsafe context. Performs raw I/O port access.
-    fn debug_hex(value: u8) {
-        const HEX: &[u8] = b"0123456789ABCDEF";
-        let high = (value >> 4) & 0x0F;
-        let low = value & 0x0F;
-
-        // Write directly without waiting
-        outb(0x3F8, b'=');
-        outb(0x3F8, b'0');
-        outb(0x3F8, b'x');
-        outb(0x3F8, HEX[high as usize]);
-        outb(0x3F8, HEX[low as usize]);
     }
 
     /// Send IDENTIFY command to drive

@@ -59,28 +59,12 @@ pub struct IrqSafeMutexGuard<'a, T> {
 
 impl<'a, T> Drop for IrqSafeMutexGuard<'a, T> {
     fn drop(&mut self) {
-        // Debug: Mark that we're dropping the guard (releasing the lock)
-        unsafe {
-            core::arch::asm!(
-                "out dx, al",
-                in("dx") 0x3f8u16,
-                in("al") b'~' as u8,  // ~ = Lock being released
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-
         // The inner guard drops here automatically, releasing the spinlock
 
         // Re-enable interrupts ONLY if they were enabled when we entered
         if self.irq_enabled_on_entry {
             unsafe {
                 core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
-                core::arch::asm!(
-                    "out dx, al",
-                    in("dx") 0x3f8u16,
-                    in("al") b'^' as u8,  // ^ = Interrupts re-enabled
-                    options(nomem, nostack, preserves_flags)
-                );
             }
         }
     }

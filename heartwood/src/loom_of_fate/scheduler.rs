@@ -38,32 +38,16 @@ impl Default for Scheduler {
     }
 }
 
-/// Helper to write to serial for debugging
-unsafe fn serial_out(c: u8) {
-    core::arch::asm!(
-        "out dx, al",
-        in("dx") 0x3f8u16,
-        in("al") c,
-        options(nomem, nostack, preserves_flags)
-    );
-}
-
 impl Scheduler {
     pub fn new() -> Self {
-        unsafe { serial_out(b'a'); } // Scheduler::new() started
 
         // Pre-allocate capacity to prevent reallocation during push
         // This avoids memory overlap between Vec storage and stack allocations
         let threads = Vec::with_capacity(16);
-        unsafe { serial_out(b'b'); } // threads Vec created
         let stacks = Vec::with_capacity(16);
-        unsafe { serial_out(b'c'); } // stacks Vec created
         let ready_queue = VecDeque::new();
-        unsafe { serial_out(b'd'); } // ready_queue created
         let harmony_analyzer = HarmonyAnalyzer::new();
-        unsafe { serial_out(b'e'); } // harmony_analyzer created
 
-        unsafe { serial_out(b'f'); } // About to return
         Self {
             threads,
             stacks,
@@ -83,11 +67,9 @@ impl Scheduler {
     /// Create a new Scheduler directly in a Box on the heap
     /// This avoids stack overflow by never creating the Scheduler on the stack
     pub fn new_boxed() -> alloc::boxed::Box<Self> {
-        unsafe { serial_out(b'a'); }
 
         // Allocate uninitialized box
         let mut boxed: alloc::boxed::Box<core::mem::MaybeUninit<Self>> = alloc::boxed::Box::new_uninit();
-        unsafe { serial_out(b'b'); }
 
         // Initialize fields directly in the box using ptr::addr_of_mut!
         // This ensures we never create intermediate references to uninitialized memory
@@ -95,38 +77,27 @@ impl Scheduler {
             let ptr: *mut Scheduler = boxed.as_mut_ptr();
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).threads), Vec::with_capacity(16));
-            serial_out(b'c');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).stacks), Vec::with_capacity(16));
-            serial_out(b'd');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).ready_queue), VecDeque::new());
-            serial_out(b'e');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).current_thread), None);
-            serial_out(b'f');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).next_thread_id), 1);
-            serial_out(b'g');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).harmony_analyzer), HarmonyAnalyzer::new());
-            serial_out(b'h');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).latest_metrics), HarmonyMetrics::default());
-            serial_out(b'i');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).context_switches), 0);
-            serial_out(b'j');
 
             // Initialize preemption fields (disabled by default, 100ms quantum for testing)
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).preemption_enabled), false);
-            serial_out(b'k');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).time_quantum), 100);
-            serial_out(b'l');
 
             core::ptr::write(core::ptr::addr_of_mut!((*ptr).quantum_remaining), 100);
-            serial_out(b'm');
 
             boxed.assume_init()
         }
@@ -173,34 +144,27 @@ impl Scheduler {
     /// This method is designed to be called with the lock held, then the lock
     /// can be dropped before the actual context switch.
     pub fn prepare_yield(&mut self) -> (bool, *mut ThreadContext, *const ThreadContext) {
-        unsafe { serial_out(b'P'); } // Entering prepare_yield (NEW CODE)
-        unsafe { serial_out(b'1'); }
 
         // Analyze harmony before scheduling
         let metrics = self.harmony_analyzer.analyze(&mut self.threads);
         self.latest_metrics = metrics;
-        unsafe { serial_out(b'2'); } // Harmony analyzed
 
         // Adaptive scheduling based on system harmony
         if metrics.system_harmony < 0.5 {
             // System is in disharmony - prioritize cooperative threads
             self.rebalance_for_harmony();
         }
-        unsafe { serial_out(b'3'); } // After harmony check
 
         // Find the next thread to run
         let next_thread_id = self.select_next_thread();
-        unsafe { serial_out(b'4'); } // After select
 
         if next_thread_id.is_none() {
             // No threads ready - this shouldn't happen in a well-designed system
             // but if it does, we just return (stay on current thread if any)
-            unsafe { serial_out(b'0'); } // No next thread!
             return (false, core::ptr::null_mut(), core::ptr::null());
         }
 
         let next_id = next_thread_id.unwrap();
-        unsafe { serial_out(b'5'); } // Got next_id
 
         // If we're switching to a different thread, prepare for context switch
         if self.current_thread.is_some() && self.current_thread != Some(next_id) {
@@ -251,7 +215,6 @@ impl Scheduler {
     /// Called after a context switch to do any cleanup
     pub fn after_yield(&mut self) {
         // Currently nothing to do here, but this provides a hook for future cleanup
-        unsafe { serial_out(b'6'); } // After yield complete
     }
 
     /// Perform a context switch between two threads

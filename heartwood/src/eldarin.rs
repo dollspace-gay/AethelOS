@@ -369,16 +369,6 @@ pub fn poll() {
         let should_execute = {
             let buffer = get_buffer().lock();
             let has_newline = buffer.as_str().contains('\n');
-            if has_newline {
-                // Debug: we found a newline!
-                let port = 0x3f8u16;
-                core::arch::asm!(
-                    "out dx, al",
-                    in("dx") port,
-                    in("al") b'!' as u8,
-                    options(nomem, nostack, preserves_flags)
-                );
-            }
             has_newline
         };
 
@@ -448,16 +438,6 @@ pub fn poll() {
 
 /// Display the shell prompt
 pub fn display_prompt() {
-    // Debug: signal that we're about to print prompt
-    unsafe {
-        let port = 0x3f8u16;
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") b'>' as u8,
-            options(nomem, nostack, preserves_flags)
-        );
-    }
     crate::print!("aethel> ");
 }
 

@@ -30,17 +30,6 @@ pub fn idle_thread() -> ! {
     // The idle thread is pure. It holds no locks, prints nothing, demands nothing.
     // It exists only to yield the CPU when all other threads are sleeping.
 
-    // DEBUG: Silent marker that we've awakened
-    unsafe {
-        let port = 0x3f8u16;
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") b'!' as u8,  // ! = Made it to idle_thread!
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     // CRITICAL: Set ourselves as the current thread in the scheduler FIRST
     // The Great Hand-Off doesn't do this, so we must do it ourselves
     // DO THIS BEFORE ENABLING INTERRUPTS to avoid deadlock!
@@ -49,13 +38,6 @@ pub fn idle_thread() -> ! {
         let mut loom = get_loom().lock();
         let idle_id = ThreadId(1);
         loom.prepare_handoff(idle_id);
-
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") 0x3f8u16,
-            in("al") b'S' as u8,  // S = Set as current
-            options(nomem, nostack, preserves_flags)
-        );
     }
 
     // NOW enable interrupts - the world can now interact with us
@@ -63,56 +45,15 @@ pub fn idle_thread() -> ! {
         core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
     }
 
-    // DEBUG: Interrupts enabled
-    unsafe {
-        let port = 0x3f8u16;
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") b'I' as u8,  // I = Interrupts enabled
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     // The eternal, silent loop of the idle thread
     // We speak not. We hold no locks. We are the void between actions.
     loop {
-        // DEBUG: Mark loop iteration
-        unsafe {
-            core::arch::asm!(
-                "out dx, al",
-                in("dx") 0x3f8u16,
-                in("al") b'.' as u8,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-
         // Yield to let other threads run
         yield_now();
-
-        // DEBUG: After yield
-        unsafe {
-            core::arch::asm!(
-                "out dx, al",
-                in("dx") 0x3f8u16,
-                in("al") b'y' as u8,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
 
         // Halt CPU until next interrupt (most power-efficient)
         unsafe {
             core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
-        }
-
-        // DEBUG: After hlt
-        unsafe {
-            core::arch::asm!(
-                "out dx, al",
-                in("dx") 0x3f8u16,
-                in("al") b'h' as u8,
-                options(nomem, nostack, preserves_flags)
-            );
         }
     }
 }
@@ -126,16 +67,6 @@ pub fn idle_thread() -> ! {
 /// Priority: High (user input is important)
 /// Harmony: High - it serves user needs directly
 pub fn keyboard_thread() -> ! {
-    // DEBUG: Mark that we started
-    unsafe {
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") 0x3f8u16,
-            in("al") b'K' as u8,  // K = Keyboard thread started
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     crate::println!("  ⟡ Keyboard thread awakened");
 
     loop {
@@ -165,53 +96,12 @@ pub fn keyboard_thread() -> ! {
 /// Priority: Normal (important but not critical)
 /// Harmony: High - it translates user intentions
 pub fn shell_thread() -> ! {
-    // DEBUG: Mark that we started
-    unsafe {
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") 0x3f8u16,
-            in("al") b'T' as u8,  // T = sHell Thread started
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     // FORCE interrupts enabled at thread start
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
     }
 
-    // Debug: Check if interrupts are enabled NOW
-    unsafe {
-        let flags: u64;
-        core::arch::asm!(
-            "pushfq",
-            "pop {0}",
-            out(reg) flags,
-            options(nomem, preserves_flags)
-        );
-        let interrupts_enabled = (flags & 0x200) != 0;
-
-        let port = 0x3f8u16;
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") if interrupts_enabled { b'+' } else { b'-' },  // + = enabled, - = disabled
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     crate::println!("  ⟡ Shell thread awakened");
-
-    // Debug: Mark that first println completed
-    unsafe {
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") 0x3f8u16,
-            in("al") b'*' as u8,  // * = First println returned
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-
     crate::println!();
     display_welcome();
 
@@ -235,27 +125,16 @@ pub fn shell_thread() -> ! {
 
 /// Display the welcome message
 fn display_welcome() {
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'1', options(nomem, nostack, preserves_flags)); }
     crate::println!("====================================================================");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'2', options(nomem, nostack, preserves_flags)); }
     crate::println!("                                                                    ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'3', options(nomem, nostack, preserves_flags)); }
     crate::println!("                     Welcome to AethelOS                            ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'4', options(nomem, nostack, preserves_flags)); }
     crate::println!("                                                                    ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'5', options(nomem, nostack, preserves_flags)); }
     crate::println!("          The Operating System of Symbiotic Computing               ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'6', options(nomem, nostack, preserves_flags)); }
     crate::println!("                                                                    ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'7', options(nomem, nostack, preserves_flags)); }
     crate::println!("   \"We do not command the machine; we dance with it.\"              ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'8', options(nomem, nostack, preserves_flags)); }
     crate::println!("                                                                    ");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'9', options(nomem, nostack, preserves_flags)); }
     crate::println!("====================================================================");
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'0', options(nomem, nostack, preserves_flags)); }
     crate::println!();
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'!', options(nomem, nostack, preserves_flags)); }
 
     // Display system statistics
     // NOTE: This is now interrupt-safe! The stats() function uses without_interrupts()
@@ -271,15 +150,11 @@ fn display_welcome() {
 /// - loom_of_fate::stats() uses without_interrupts()
 /// - Memory allocator stats use interrupt-safe locks
 fn display_system_stats() {
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b's', options(nomem, nostack, preserves_flags)); }
-
     // Get scheduler stats
     let loom_stats = crate::loom_of_fate::stats();
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b't', options(nomem, nostack, preserves_flags)); }
 
     // Get memory stats
     let mana_stats = crate::mana_pool::stats();
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'm', options(nomem, nostack, preserves_flags)); }
 
     crate::println!("   System Status:");
     crate::println!("   ─────────────");
@@ -289,19 +164,16 @@ fn display_system_stats() {
         loom_stats.total_threads,
         loom_stats.weaving_threads,
         loom_stats.resting_threads);
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'a', options(nomem, nostack, preserves_flags)); }
 
     crate::println!("   • Harmony: {:.2} (system: {:.2})",
         loom_stats.average_harmony,
         loom_stats.system_harmony);
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'b', options(nomem, nostack, preserves_flags)); }
 
     if loom_stats.parasite_count > 0 {
         crate::println!("   • Parasites detected: {}", loom_stats.parasite_count);
     }
 
     crate::println!("   • Context switches: {}", loom_stats.context_switches);
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'c', options(nomem, nostack, preserves_flags)); }
 
     // Memory statistics
     let used_kb = mana_stats.sanctuary_used / 1024;
@@ -314,10 +186,8 @@ fn display_system_stats() {
 
     crate::println!("   • Memory: {} KB / {} KB ({}% used)",
         used_kb, total_kb, used_percent);
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'd', options(nomem, nostack, preserves_flags)); }
 
     crate::println!("   • Objects: {}", mana_stats.total_objects);
-    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'e', options(nomem, nostack, preserves_flags)); }
 }
 
 

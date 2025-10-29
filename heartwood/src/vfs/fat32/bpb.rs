@@ -283,7 +283,6 @@ impl Fat32Bpb {
     pub fn from_device(device: &dyn BlockDevice) -> Result<Self, &'static str> {
         // Debug: entering from_device
         unsafe {
-            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'A', options(nomem, nostack));
         }
 
         // Try primary boot sector first
@@ -291,7 +290,6 @@ impl Fat32Bpb {
 
         // Debug: read_sector returned
         unsafe {
-            core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'B', options(nomem, nostack));
         }
 
         let (boot_sector, used_backup) = match boot_sector_result {
