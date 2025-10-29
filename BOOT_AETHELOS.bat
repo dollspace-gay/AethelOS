@@ -9,7 +9,7 @@ echo.
 
 "C:\Program Files\qemu\qemu-system-x86_64.exe" ^
   -cdrom aethelos.iso ^
-  -hda aethelos-test.img ^
+  -hda aethelos-test-ext4.img ^
   -boot d ^
   -serial file:serial.log ^
   -m 256M ^

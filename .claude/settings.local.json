@@ -106,7 +106,8 @@
       "Bash(echo:*)",
       "Bash(done)",
       "Bash(for file in src/loom_of_fate/mod.rs src/mana_pool/mod.rs src/nexus/mod.rs src/rtl.rs src/vga_buffer.rs)",
-      "Bash(do echo \"=== $file ===\" grep -A2 \"out dx, al\" \"$file\")"
+      "Bash(do echo \"=== $file ===\" grep -A2 \"out dx, al\" \"$file\")",
+      "Bash(bd dep add:*)"
     ],
     "deny": [],
     "ask": []

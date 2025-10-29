@@ -110,10 +110,11 @@ pub extern "C" fn _start() -> ! {
     }
 }
 
-/// Detect ATA drives and mount FAT32 filesystem
+/// Detect ATA drives and mount filesystem (FAT32 or ext4)
 fn detect_and_mount_storage() {
     use heartwood::drivers::AtaDrive;
     use heartwood::vfs::fat32::Fat32;
+    use heartwood::vfs::ext4::Ext4;
     use heartwood::vfs::global as vfs_global;
     use alloc::boxed::Box;
 
@@ -137,21 +138,51 @@ fn detect_and_mount_storage() {
             let size_mb = (sectors * 512) / (1024 * 1024);
             println!("  ✓ Detected ATA drive: {} sectors (~{} MB)", sectors, size_mb);
 
-            // Try to mount as FAT32
-            println!("  ◈ Attempting to mount FAT32 filesystem...");
-            match Fat32::new(Box::new(drive)) {
+            // Try to auto-detect filesystem type
+            println!("  ◈ Detecting filesystem type...");
+
+            // Try ext4 first (check magic number)
+            println!("  ◈ Attempting to mount ext4 filesystem...");
+            match Ext4::new(Box::new(drive)) {
                 Ok(fs) => {
-                    println!("  ✓ FAT32 filesystem mounted successfully!");
+                    println!("  ✓ ext4 filesystem mounted successfully!");
 
                     // Mount globally so shell commands can access it
                     vfs_global::mount(Box::new(fs));
                     println!("  ✓ Filesystem mounted at / (accessible via shell)");
                     println!();
-                    println!("  Try: vfs-ls / to list files");
+                    println!("  Try: reveal to list files");
                 }
-                Err(e) => {
-                    println!("  ✗ Failed to mount FAT32: {}", e);
-                    println!("  (Drive may not be FAT32 formatted)");
+                Err(_) => {
+                    // ext4 failed, try FAT32
+                    println!("  ⚠ Not an ext4 filesystem, trying FAT32...");
+
+                    // Need to re-detect drive since we consumed it
+                    // Try master first, then slave
+                    let drive2 = match AtaDrive::detect_primary_master() {
+                        Some(d) => Some(d),
+                        None => AtaDrive::detect_primary_slave()
+                    };
+
+                    if let Some(drive2) = drive2 {
+                        match Fat32::new(Box::new(drive2)) {
+                            Ok(fs) => {
+                                println!("  ✓ FAT32 filesystem mounted successfully!");
+
+                                // Mount globally so shell commands can access it
+                                vfs_global::mount(Box::new(fs));
+                                println!("  ✓ Filesystem mounted at / (accessible via shell)");
+                                println!();
+                                println!("  Try: reveal to list files");
+                            }
+                            Err(e) => {
+                                println!("  ✗ Failed to mount FAT32: {}", e);
+                                println!("  ✗ Unknown or unsupported filesystem type");
+                            }
+                        }
+                    } else {
+                        println!("  ✗ Could not re-detect drive for FAT32 probe");
+                    }
                 }
             }
         }
