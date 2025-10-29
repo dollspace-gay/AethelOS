@@ -106,12 +106,24 @@ impl<'a> FatTable<'a> {
                 panic!("FAT chain too long (possible corruption)");
             }
 
+            // Debug: Print every 10th cluster to avoid spam
+            if chain.len() % 10 == 0 {
+                crate::println!("[DEBUG FAT] Chain length: {}, current cluster: 0x{:x}", chain.len(), current);
+            }
+
             chain.push(current);
 
             let entry = self.read_entry(current)?;
 
+            // Debug: Show first few entries to diagnose
+            if chain.len() <= 5 {
+                crate::println!("[DEBUG FAT] Cluster 0x{:x} -> next: 0x{:x} (EOC: {})",
+                    current, entry, Self::is_eoc(entry));
+            }
+
             if Self::is_eoc(entry) {
                 // End of chain reached
+                crate::println!("[DEBUG FAT] Chain complete, {} clusters", chain.len());
                 break;
             }
 
@@ -143,7 +155,11 @@ impl<'a> FatTable<'a> {
     /// * `Ok(Vec<u8>)` - File data (up to max_size bytes)
     /// * `Err(BlockDeviceError)` - Read failed
     pub fn read_chain(&self, start_cluster: u32, max_size: u64) -> Result<Vec<u8>, BlockDeviceError> {
+        crate::println!("[DEBUG FAT] read_chain() called, start_cluster: 0x{:x}", start_cluster);
+
         let chain = self.follow_chain(start_cluster)?;
+        crate::println!("[DEBUG FAT] follow_chain() returned {} clusters", chain.len());
+
         let cluster_size = self.bpb.cluster_size() as usize;
         let mut data = Vec::new();
         let mut remaining = max_size as usize;

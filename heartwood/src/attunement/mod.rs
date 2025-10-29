@@ -30,16 +30,20 @@ pub fn init() {
     crate::println!("◈ Beginning the Grand Attunement...");
 
     unsafe {
-        // Quest 1: Tame the Guardian (Remap PICs to 32-47)
-        crate::println!("  ⟡ Quest 1: Taming the Guardian (PIC remapping)...");
+        // Quest 1: Establish the Boundaries (Setup GDT & TSS)
+        crate::println!("  ⟡ Quest 1: Establishing privilege boundaries (GDT & TSS)...");
+        gdt::init();
+
+        // Quest 2: Tame the Guardian (Remap PICs to 32-47)
+        crate::println!("  ⟡ Quest 2: Taming the Guardian (PIC remapping)...");
         PICS.lock().initialize();
 
-        // Quest 2: Scribe the Laws (Setup IDT)
-        crate::println!("  ⟡ Quest 2: Scribing the Laws of Reaction (IDT)...");
+        // Quest 3: Scribe the Laws (Setup IDT)
+        crate::println!("  ⟡ Quest 3: Scribing the Laws of Reaction (IDT)...");
         idt::init();
 
-        // Quest 3: Initialize keyboard state (no PS/2 commands, trust BIOS)
-        crate::println!("  ⟡ Quest 3: Preparing keyboard state...");
+        // Quest 4: Initialize keyboard state (no PS/2 commands, trust BIOS)
+        crate::println!("  ⟡ Quest 4: Preparing keyboard state...");
         keyboard::init();
 
         // Final Step: Open the gates (enable interrupts)

@@ -178,16 +178,25 @@ impl FileSystem for Fat32 {
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<VfsDirEntry>, FsError> {
+        crate::println!("[DEBUG FAT32] read_dir() called for path: {}", path.as_str());
+
         let entry = self.find_entry(path)?;
+        crate::println!("[DEBUG FAT32] find_entry() returned, is_dir: {}, first_cluster: 0x{:x}",
+            entry.is_dir, entry.first_cluster);
 
         if !entry.is_dir {
             return Err(FsError::NotADirectory);
         }
 
         // Read directory data
+        crate::println!("[DEBUG FAT32] Creating FatTable...");
         let fat = FatTable::new(&*self.device, &self.bpb);
+
+        crate::println!("[DEBUG FAT32] Calling read_chain for cluster 0x{:x}...", entry.first_cluster);
         let dir_data = fat.read_chain(entry.first_cluster, u64::MAX)
             .map_err(|_| FsError::IoError)?;
+
+        crate::println!("[DEBUG FAT32] read_chain completed, got {} bytes", dir_data.len());
 
         // Parse directory entries
         let iter = DirEntryIter::new(dir_data);

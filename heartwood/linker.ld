@@ -37,6 +37,14 @@ SECTIONS
         *(.rodata .rodata.*)
     } :text
 
+    /* The Rune of Permanence - Structures that become read-only after boot */
+    .rune ALIGN(4K) : AT(ADDR(.rune))
+    {
+        PROVIDE(__rune_start = .);
+        *(.rune .rune.*)
+        PROVIDE(__rune_end = .);
+    } :text
+
     /* Initialized data */
     .data ALIGN(4K) : AT(ADDR(.data))
     {

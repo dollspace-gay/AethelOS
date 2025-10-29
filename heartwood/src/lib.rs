@@ -26,12 +26,23 @@ static GLOBAL_ALLOCATOR: BuddyAllocator = BuddyAllocator::new();
 /// MUST be called BEFORE any heap allocations occur (including Box, Vec, etc.)
 pub fn init_global_allocator() {
     unsafe {
-        // Initialize the global allocator with heap region: 4MB - 8MB (4MB total)
+        // Initialize the global allocator with heap region: 4MB - 12MB (8MB total)
+        // Increased from 4MB due to allocations during disk mounting
         const HEAP_START: usize = 0x400000;  // 4MB
-        const HEAP_SIZE: usize = 0x400000;   // 4MB
+        const HEAP_SIZE: usize = 0x800000;   // 8MB (doubled)
 
         GLOBAL_ALLOCATOR.init(HEAP_START, HEAP_SIZE);
     }
+}
+
+/// DIAGNOSTIC: Check if allocator lock is stuck
+pub fn allocator_is_locked() -> bool {
+    GLOBAL_ALLOCATOR.is_locked()
+}
+
+/// DIAGNOSTIC: Force unlock the allocator
+pub unsafe fn allocator_force_unlock() {
+    GLOBAL_ALLOCATOR.force_unlock();
 }
 
 // Re-export core modules
@@ -45,6 +56,7 @@ pub mod rtl;  // Runtime library with memcpy, etc.
 pub mod eldarin;  // The Eldarin Shell
 pub mod wards_command;  // Security wards command
 pub mod sigils_command;  // Weaver's Sigils command
+pub mod permanence_command;  // Rune of Permanence command
 pub mod stack_protection;  // Stack canary runtime (LLVM support)
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer

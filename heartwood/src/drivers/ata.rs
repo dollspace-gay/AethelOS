@@ -97,7 +97,7 @@ impl AtaDrive {
                     break;  // BSY is clear, safe to proceed
                 }
                 timeout += 1;
-                if timeout > 1000000 {
+                if timeout > 50000 {  // Reduced from 1000000 for faster timeout
                     Self::debug_char(b'T');  // Timeout waiting for BSY
                     return None;
                 }
@@ -162,7 +162,7 @@ impl AtaDrive {
                 }
 
                 timeout += 1;
-                if timeout > 1000000 {
+                if timeout > 50000 {  // Reduced from 1000000 for faster timeout
                     Self::debug_char(b'T');  // Timeout
                     return None;
                 }
@@ -361,7 +361,7 @@ impl AtaDrive {
                     break;
                 }
                 timeout += 1;
-                if timeout > 1000000 {
+                if timeout > 50000 {  // Reduced from 1000000 for faster timeout
                     return Err(BlockDeviceError::IoError);
                 }
             }
@@ -394,7 +394,7 @@ impl AtaDrive {
                     break;
                 }
                 timeout += 1;
-                if timeout > 1000000 {
+                if timeout > 50000 {  // Reduced from 1000000 for faster timeout
                     return Err(BlockDeviceError::IoError);
                 }
             }
@@ -410,7 +410,7 @@ impl AtaDrive {
                     break;
                 }
                 timeout += 1;
-                if timeout > 1000000 {
+                if timeout > 50000 {  // Reduced from 1000000 for faster timeout
                     return Err(BlockDeviceError::IoError);
                 }
             }

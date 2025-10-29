@@ -1,3 +1,18 @@
+   Compiling compiler_builtins v0.1.160 (C:\Users\admin\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\compiler-builtins\compiler-builtins)
+   Compiling core v0.0.0 (C:\Users\admin\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core)
+   Compiling rustversion v1.0.22
+   Compiling alloc v0.0.0 (C:\Users\admin\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\alloc)
+   Compiling scopeguard v1.2.0
+   Compiling volatile v0.4.6
+   Compiling bit_field v0.10.3
+   Compiling bitflags v2.10.0
+   Compiling hmac-sha256 v1.1.12
+   Compiling bitflags v1.3.2
+   Compiling lock_api v0.4.14
+   Compiling x86_64 v0.14.13
+   Compiling spin v0.9.8
+   Compiling lazy_static v1.5.0
+   Compiling pic8259 v0.10.4
    Compiling heartwood v0.1.0 (F:\OS\heartwood)
 warning: associated function `new` is never used
   --> heartwood\src\mana_pool\capability.rs:51:19
@@ -45,5 +60,33 @@ warning: associated functions `debug_str`, `identify`, `read_sector_count`, `wai
 454 |     fn tiny_delay() {
     |        ^^^^^^^^^^
 
-warning: `heartwood` (lib) generated 3 warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.76s
+warning: creating a mutable reference to mutable static
+  --> heartwood\src\attunement\idt.rs:37:9
+   |
+37 |         IDT.write(idt);
+   |         ^^^^^^^^^^^^^^ mutable reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+   = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a shared reference to mutable static
+  --> heartwood\src\attunement\idt.rs:41:9
+   |
+41 |         IDT.assume_init_ref().load();
+   |         ^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: creating a shared reference to mutable static
+  --> heartwood\src\attunement\idt.rs:53:5
+   |
+53 |     IDT.assume_init_ref()
+   |     ^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: `heartwood` (lib) generated 6 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 28.08s

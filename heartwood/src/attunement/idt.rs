@@ -1,12 +1,30 @@
 //! # The Laws of Reaction - Interrupt Descriptor Table
 //!
 //! Using x86_64 crate for proper, safe interrupt handling
+//!
+//! The IDT is placed in the .rune section and becomes read-only after boot,
+//! protecting it from data-only attacks that might try to hijack interrupt handlers.
 
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
-use lazy_static::lazy_static;
+use core::mem::MaybeUninit;
 
-lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
+/// The Interrupt Descriptor Table - placed in .rune section for permanence
+///
+/// After boot, this becomes read-only at the hardware level, preventing any
+/// modification to interrupt handler addresses.
+#[link_section = ".rune"]
+static mut IDT: MaybeUninit<InterruptDescriptorTable> = MaybeUninit::uninit();
+
+/// Track whether IDT has been initialized
+static mut IDT_INITIALIZED: bool = false;
+
+/// Initialize and load the IDT into the CPU
+///
+/// This MUST be called before seal_rune_section() is called, as it needs
+/// to write to the IDT structure.
+pub fn init() {
+    unsafe {
+        // Create and configure the IDT
         let mut idt = InterruptDescriptorTable::new();
 
         // The Keyboard Spell - IRQ 1 = Interrupt 33
@@ -15,13 +33,24 @@ lazy_static! {
         // The Timer Spell - IRQ 0 = Interrupt 32
         idt[32].set_handler_fn(timer_interrupt_handler);
 
-        idt
-    };
+        // Write to the static
+        IDT.write(idt);
+        IDT_INITIALIZED = true;
+
+        // Load into CPU
+        IDT.assume_init_ref().load();
+    }
 }
 
-/// Load the IDT into the CPU
-pub fn init() {
-    IDT.load();
+/// Get a reference to the IDT (for debugging/introspection)
+///
+/// # Safety
+/// Must only be called after init()
+pub unsafe fn get_idt() -> &'static InterruptDescriptorTable {
+    if !IDT_INITIALIZED {
+        panic!("IDT not initialized!");
+    }
+    IDT.assume_init_ref()
 }
 
 /// The Keyboard Interrupt Handler - The Spell of Perception

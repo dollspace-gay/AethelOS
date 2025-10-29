@@ -88,7 +88,17 @@
       "Bash(cmd /c:*)",
       "Bash(cargo test:*)",
       "Bash(wsl tail:*)",
-      "Bash(wsl wc:*)"
+      "Bash(wsl wc:*)",
+      "Bash(bd list:*)",
+      "Bash(bd create:*)",
+      "Bash(bd update:*)",
+      "Bash(bd show:*)",
+      "Bash(if [ -f serial.log ])",
+      "Bash(then tail -100 serial.log)",
+      "Bash(else echo \"serial.log not found\")",
+      "Bash(bd close:*)",
+      "Bash(cargo nm:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

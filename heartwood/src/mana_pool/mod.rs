@@ -27,6 +27,9 @@ pub mod entropy;  // Random number generation for ASLR
 pub mod aslr;     // Address Space Layout Randomization
 pub mod sealing;  // Cryptographic capability sealing
 pub mod heap_canaries;  // Heap buffer overflow protection
+pub mod page_tables;  // x86_64 page table management
+pub mod security_policy;  // Immutable security configuration
+pub mod rune_of_permanence;  // Hardware-enforced kernel data immutability
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights, CapabilityId, SealedCapability};

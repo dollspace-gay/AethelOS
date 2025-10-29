@@ -34,6 +34,17 @@ pub fn show_wards_page(page: usize) {
             crate::println!("    Thread stacks randomized with 0-64KB entropy");
             crate::println!();
 
+            // Rune of Permanence Status
+            let rune_sealed = crate::mana_pool::rune_of_permanence::is_sealed();
+            crate::println!("  Rune of Permanence (Immutable Structures): {}",
+                if rune_sealed { "✓ Sealed" } else { "○ Unsealed" });
+            if rune_sealed {
+                crate::println!("    Protected: IDT, GDT, TSS, Security Policy");
+                crate::println!("    Pages: {} read-only",
+                    crate::mana_pool::rune_of_permanence::get_rune_page_count());
+            }
+            crate::println!();
+
             // Thread Stack Information
             crate::println!("  Thread Stack Wards:");
 

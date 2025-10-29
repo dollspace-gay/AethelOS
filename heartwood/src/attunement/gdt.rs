@@ -8,9 +8,14 @@
 //! ## Philosophy
 //! Privilege is not dominion, but responsibility.
 //! The kernel serves userspace as much as userspace relies on the kernel.
+//!
+//! ## The Rune of Permanence
+//! The GDT and TSS are placed in the .rune section and become read-only after
+//! boot, protecting them from data-only attacks that might try to modify
+//! privilege levels or segment boundaries.
 
 use core::arch::asm;
-use core::mem::size_of;
+use core::mem::{size_of, MaybeUninit};
 
 /// GDT Entry - A segment descriptor
 #[derive(Debug, Clone, Copy)]
@@ -269,4 +274,74 @@ pub mod selectors {
 
     /// TSS selector
     pub const TSS: u16 = 0x28;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Runtime GDT and TSS - Placed in .rune for permanence
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The Task State Segment - placed in .rune for permanence
+///
+/// After boot, this becomes read-only, preventing modification of privilege
+/// stack pointers or IST entries.
+#[link_section = ".rune"]
+static mut TSS: MaybeUninit<TaskStateSegment> = MaybeUninit::uninit();
+
+/// The Global Descriptor Table - placed in .rune for permanence
+///
+/// After boot, this becomes read-only, preventing modification of segment
+/// descriptors, privilege levels, or segment boundaries.
+#[link_section = ".rune"]
+static mut GDT: MaybeUninit<GlobalDescriptorTable> = MaybeUninit::uninit();
+
+/// Track whether GDT has been initialized
+static mut GDT_INITIALIZED: bool = false;
+
+/// Initialize the GDT and TSS
+///
+/// This MUST be called before seal_rune_section(), as it writes to the GDT/TSS.
+/// It replaces the boot GDT (from boot32.rs) with a proper runtime GDT that
+/// includes user segments and a TSS.
+pub fn init() {
+    unsafe {
+        // Initialize TSS
+        let tss = TaskStateSegment::new();
+        TSS.write(tss);
+        let tss_ref: &'static TaskStateSegment = TSS.assume_init_ref();
+
+        // Initialize GDT with all segments
+        let mut gdt = GlobalDescriptorTable::new();
+        gdt.initialize(tss_ref);
+        GDT.write(gdt);
+        GDT_INITIALIZED = true;
+
+        // Load the new GDT
+        let gdt_ref: &'static GlobalDescriptorTable = GDT.assume_init_ref();
+        gdt_ref.load();
+
+        // Load the TSS
+        gdt_ref.load_tss();
+    }
+}
+
+/// Get a reference to the GDT (for introspection)
+///
+/// # Safety
+/// Must only be called after init()
+pub unsafe fn get_gdt() -> &'static GlobalDescriptorTable {
+    if !GDT_INITIALIZED {
+        panic!("GDT not initialized!");
+    }
+    GDT.assume_init_ref()
+}
+
+/// Get a reference to the TSS (for introspection)
+///
+/// # Safety
+/// Must only be called after init()
+pub unsafe fn get_tss() -> &'static TaskStateSegment {
+    if !GDT_INITIALIZED {
+        panic!("GDT/TSS not initialized!");
+    }
+    TSS.assume_init_ref()
 }
