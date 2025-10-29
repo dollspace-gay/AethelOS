@@ -34,15 +34,10 @@ impl<T> InterruptSafeLock<T> {
 
     /// Acquire the lock, returning a guard that restores interrupt state on drop
     pub fn lock(&self) -> InterruptSafeLockGuard<'_, T> {
-        // Save current interrupt state
         let interrupts_enabled = are_interrupts_enabled();
-
-        // Disable interrupts
         disable_interrupts();
 
-        // Spin until we acquire the lock
         while self.locked.swap(true, Ordering::Acquire) {
-            // Busy wait
             core::hint::spin_loop();
         }
 
@@ -58,6 +53,11 @@ impl<T> InterruptSafeLock<T> {
     /// Only call this if you know for certain the lock is currently held
     pub unsafe fn force_unlock(&self) {
         self.locked.store(false, Ordering::Release);
+    }
+
+    /// DIAGNOSTIC: Check if the lock is currently held
+    pub fn is_locked(&self) -> bool {
+        self.locked.load(Ordering::Acquire)
     }
 }
 

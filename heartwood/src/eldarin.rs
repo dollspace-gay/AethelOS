@@ -194,6 +194,7 @@ pub enum PagingCommand {
     Help,
     Wards,
     Sigils,
+    Permanence,
 }
 
 pub(crate) static mut PAGING_COMMAND: Option<PagingCommand> = None;
@@ -230,6 +231,36 @@ pub fn handle_char(ch: char) {
             return;
         }
 
+        // Handle paging navigation keys when in paging mode
+        if PAGING_ACTIVE {
+            match ch {
+                ' ' | '\n' => {
+                    // SPACE or ENTER - advance to next page
+                    let mut buffer = get_buffer().lock();
+                    buffer.clear();  // Clear any stray characters
+                    buffer.push('\n');
+                    return;
+                }
+                '\x1b' => {
+                    // ESC - exit paging mode
+                    {
+                        let mut buffer = get_buffer().lock();
+                        buffer.clear();
+                    }
+                    PAGING_ACTIVE = false;
+                    PAGING_PAGE = 0;
+                    PAGING_COMMAND = None;
+                    display_prompt();
+                    return;
+                }
+                _ => {
+                    // Ignore other keys in paging mode
+                    return;
+                }
+            }
+        }
+
+        // Normal command mode key handling
         match ch {
             '\n' => {
                 // Enter pressed - just buffer it
@@ -366,6 +397,7 @@ pub fn poll() {
                     Some(PagingCommand::Help) => show_help_page(PAGING_PAGE),
                     Some(PagingCommand::Wards) => crate::wards_command::show_wards_page(PAGING_PAGE),
                     Some(PagingCommand::Sigils) => crate::sigils_command::show_sigils_page(PAGING_PAGE),
+                    Some(PagingCommand::Permanence) => crate::permanence_command::show_permanence_page(PAGING_PAGE),
                     None => {
                         // Safety: should never happen
                         PAGING_ACTIVE = false;
@@ -460,6 +492,7 @@ fn execute_command(input: &str) {
         "uptime" => cmd_uptime(),
         "wards" => cmd_wards(),            // Security wards (ASLR, W^X)
         "sigils" => cmd_sigils(),          // Weaver's Sigils (stack canaries)
+        "permanence" => cmd_permanence(),  // Rune of Permanence (immutable structures)
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -568,6 +601,8 @@ fn show_help_page(page: usize) {
             crate::println!("  observe-weave      - Real-time view of the Loom's activity");
             crate::println!("  uptime             - Show how long the realm has been awake");
             crate::println!("  wards              - Display security protections (ASLR, W^X)");
+            crate::println!("  sigils             - Show The Weaver's Sigils (canary protection)");
+            crate::println!("  permanence         - View The Rune of Permanence (immutable structures)");
             crate::println!();
             crate::println!("Thread Management:");
             crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
@@ -992,7 +1027,12 @@ fn cmd_vfs_ls(args: &str) {
     use crate::vfs::Path;
     use crate::vfs::global as vfs_global;
 
-    let path = if args.is_empty() { "/" } else { args.trim() };
+    let path_str = if args.is_empty() { "/" } else { args.trim() };
+
+    // CRITICAL: Create Path BEFORE acquiring any locks!
+    // Path::new() allocates memory, so doing it while holding a lock
+    // can cause deadlock with the allocator
+    let path = Path::new(path_str);
 
     // Get global filesystem
     let global_fs = match vfs_global::get() {
@@ -1013,10 +1053,10 @@ fn cmd_vfs_ls(args: &str) {
         }
     };
 
-    crate::println!("◈ The World-Tree reveals: {}", path);
+    crate::println!("◈ The World-Tree reveals: {}", path_str);
     crate::println!();
 
-    match fs.read_dir(&Path::new(path)) {
+    match fs.read_dir(&path) {
         Ok(entries) => {
             let count = entries.len();
             if entries.is_empty() {
@@ -1115,4 +1155,8 @@ fn cmd_wards() {
 /// SIGILS - Display The Weaver's Sigils (stack canaries)
 fn cmd_sigils() {
     crate::sigils_command::cmd_sigils();
+}
+
+fn cmd_permanence() {
+    crate::permanence_command::cmd_permanence();
 }

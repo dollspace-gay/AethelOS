@@ -221,17 +221,39 @@ fn heartwood_init() {
     println!("  ✓ Loom ready");
 
     // Initialize heap canaries (after thread creation to avoid early boot issues)
+    // Fixed: User data is now padded to 8-byte alignment to ensure post-canary is aligned
     unsafe {
         mana_pool::heap_canaries::init();
     }
-    println!("  ✓ Heap canaries active (pre/post allocation protection)");
+    println!("  ✓ Heap canaries active (pre/post allocation protection, 8-byte aligned)");
 
-    // Initialize the Attunement Layer
+    // Verify The Rune of Permanence section
+    println!("◈ Verifying The Rune of Permanence...");
+    if mana_pool::rune_of_permanence::verify_rune_section() {
+        let (start, end) = mana_pool::rune_of_permanence::get_rune_boundaries();
+        let size = mana_pool::rune_of_permanence::get_rune_size();
+        let pages = mana_pool::rune_of_permanence::get_rune_page_count();
+        println!("  ✓ .rune section verified");
+        println!("    Address: 0x{:016x} - 0x{:016x}", start, end);
+        println!("    Size: {} bytes ({} KB)", size, size / 1024);
+        println!("    Pages: {} (4KB pages)", pages);
+    } else {
+        panic!("◈ FATAL: .rune section verification failed!");
+    }
+
+    // Initialize the Attunement Layer (this includes IDT initialization)
+    // IMPORTANT: Must happen before sealing, as IDT is in .rune section
     unsafe { serial_out(b'I'); }
     println!("◈ Attuning to hardware...");
     attunement::init();
     unsafe { serial_out(b'J'); }
     println!("  ✓ Attunement complete");
+
+    // Initialize security policy (must be before sealing)
+    println!("◈ Scribing security policy...");
+    mana_pool::security_policy::init();
+    println!("  ✓ Security policy configured");
+    mana_pool::security_policy::display_policy();
 
     // Initialize the Eldarin Shell
     unsafe { serial_out(b'L'); }
@@ -240,11 +262,21 @@ fn heartwood_init() {
     unsafe { serial_out(b'M'); }
     println!("  ✓ Shell ready");
 
-    // Detect ATA drives and mount filesystem
+    // Detect ATA drives and mount filesystem (BEFORE sealing to avoid issues)
     unsafe { serial_out(b'N'); }
     println!("◈ Detecting storage devices...");
     detect_and_mount_storage();
     unsafe { serial_out(b'O'); }
+    println!();
+
+    // Seal The Rune of Permanence (make read-only at MMU level)
+    // This must happen AFTER all .rune structures are initialized (IDT, security policy, etc.)
+    // AND after disk mounting to avoid page table conflicts
+    // TEMPORARILY DISABLED FOR DEBUGGING
+    println!("◈ Skipping rune sealing for debug...");
+    // unsafe {
+    //     mana_pool::rune_of_permanence::seal_rune_section();
+    // }
 
     unsafe { serial_out(b'K'); }
     println!("\n◈ Heartwood initialization complete!");

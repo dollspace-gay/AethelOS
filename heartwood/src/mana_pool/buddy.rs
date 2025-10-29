@@ -29,6 +29,16 @@ struct Block {
     next: Option<NonNull<Block>>,
 }
 
+/// SAFETY: Block is just a linked list node containing raw pointers.
+/// The pointers are protected by Mutex in LockedBuddyAllocator.
+/// Raw pointers (NonNull) can be safely sent between threads as long as
+/// access is synchronized, which it is via the Mutex wrapper.
+unsafe impl Send for Block {}
+
+/// SAFETY: Block access is always protected by Mutex in LockedBuddyAllocator.
+/// No thread can access Block data without first acquiring the lock.
+unsafe impl Sync for Block {}
+
 impl Block {
     /// Create a new block at the given address
     unsafe fn new(addr: usize) -> NonNull<Block> {
@@ -63,6 +73,15 @@ pub struct BuddyAllocator {
     /// Size of the heap
     heap_size: usize,
 }
+
+/// SAFETY: BuddyAllocator contains only NonNull<Block> pointers and usizes.
+/// Since Block is Send, and raw pointers can be sent between threads when
+/// properly synchronized (which they are via Mutex), BuddyAllocator is Send.
+unsafe impl Send for BuddyAllocator {}
+
+/// SAFETY: BuddyAllocator is always wrapped in a Mutex (via LockedBuddyAllocator),
+/// so all access is synchronized. This makes it safe to share references across threads.
+unsafe impl Sync for BuddyAllocator {}
 
 impl BuddyAllocator {
     /// Create a new uninitialized buddy allocator
@@ -137,9 +156,13 @@ impl BuddyAllocator {
         // Check if heap canaries are enabled
         let canaries_enabled = super::heap_canaries::are_enabled();
 
+        // IMPORTANT: Round user size up to 8-byte boundary to ensure post-canary alignment
+        // This aligned_size is used both for allocation and for write_canaries
+        let aligned_size = (size + 7) & !7;
+
         // Add space for heap canaries only if enabled
         let total_size = if canaries_enabled {
-            size + super::heap_canaries::TOTAL_CANARY_OVERHEAD
+            aligned_size + super::heap_canaries::TOTAL_CANARY_OVERHEAD
         } else {
             size
         };
@@ -164,7 +187,8 @@ impl BuddyAllocator {
         // Write heap canaries around the allocation (only if enabled)
         if canaries_enabled {
             unsafe {
-                super::heap_canaries::write_canaries(block_addr, size);
+                // Use aligned_size, not original size, so post-canary is 8-byte aligned
+                super::heap_canaries::write_canaries(block_addr, aligned_size);
             }
             // Return pointer to user data (after pre-canary)
             Some(block_addr + super::heap_canaries::CANARY_SIZE)
@@ -194,19 +218,22 @@ impl BuddyAllocator {
             // Calculate the actual block address (before pre-canary)
             let blk_addr = addr - super::heap_canaries::CANARY_SIZE;
 
-            // Verify heap canaries before deallocation
-            if !super::heap_canaries::verify_canaries(blk_addr, size) {
+            // IMPORTANT: Must match allocation padding - round up to 8-byte boundary
+            let aligned_size = (size + 7) & !7;
+
+            // Verify heap canaries before deallocation (using aligned_size)
+            if !super::heap_canaries::verify_canaries(blk_addr, aligned_size) {
                 panic!("◈ HEAP CORRUPTION: Canary violation detected during deallocation!\n\
                        \n\
                        Address: 0x{:016x}\n\
-                       Size: {} bytes\n\
+                       Size: {} bytes (aligned: {})\n\
                        \n\
                        The Weaver's Sigil has detected heap buffer overflow.\n\
-                       This allocation's protective canaries were corrupted.", addr, size);
+                       This allocation's protective canaries were corrupted.", addr, size, aligned_size);
             }
 
             // Calculate total size including canaries
-            (blk_addr, size + super::heap_canaries::TOTAL_CANARY_OVERHEAD)
+            (blk_addr, aligned_size + super::heap_canaries::TOTAL_CANARY_OVERHEAD)
         } else {
             // No canaries - addr is the block address, size is actual size
             (addr, size)
@@ -411,7 +438,10 @@ pub struct BuddyStats {
     pub free_blocks: usize,
 }
 
-/// Thread-safe and interrupt-safe wrapper for BuddyAllocator
+/// Thread-safe wrapper for BuddyAllocator
+///
+/// Uses InterruptSafeLock to prevent deadlocks when interrupts fire during allocation.
+/// This is essential because timer/keyboard interrupts can trigger allocations.
 pub struct LockedBuddyAllocator {
     inner: InterruptSafeLock<BuddyAllocator>,
 }
@@ -447,6 +477,20 @@ impl LockedBuddyAllocator {
     /// Get statistics
     pub fn stats(&self) -> BuddyStats {
         self.inner.lock().stats()
+    }
+
+    /// DIAGNOSTIC: Check if the lock is currently held
+    pub fn is_locked(&self) -> bool {
+        self.inner.is_locked()
+    }
+
+    /// DIAGNOSTIC: Force unlock the allocator (DANGEROUS - only for debugging stuck locks)
+    ///
+    /// # Safety
+    /// This forcibly releases the lock without knowing if it's safe to do so.
+    /// Only use this for debugging stuck allocator issues.
+    pub unsafe fn force_unlock(&self) {
+        self.inner.force_unlock();
     }
 }
 

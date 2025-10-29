@@ -44,6 +44,19 @@ impl BuddyAllocator {
     pub fn stats(&self) -> super::buddy::BuddyStats {
         self.inner.stats()
     }
+
+    /// DIAGNOSTIC: Check if the allocator lock is stuck
+    pub fn is_locked(&self) -> bool {
+        self.inner.is_locked()
+    }
+
+    /// DIAGNOSTIC: Force unlock the allocator
+    ///
+    /// # Safety
+    /// This forcibly releases the lock. Only for debugging stuck locks.
+    pub unsafe fn force_unlock(&self) {
+        self.inner.force_unlock();
+    }
 }
 
 unsafe impl GlobalAlloc for BuddyAllocator {
