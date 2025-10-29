@@ -30,6 +30,7 @@ pub mod heap_canaries;  // Heap buffer overflow protection
 pub mod page_tables;  // x86_64 page table management
 pub mod security_policy;  // Immutable security configuration
 pub mod rune_of_permanence;  // Hardware-enforced kernel data immutability
+pub mod concordance_of_fates;  // Role-Based Access Control (RBAC)
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights, CapabilityId, SealedCapability};

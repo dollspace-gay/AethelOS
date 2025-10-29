@@ -473,6 +473,7 @@ fn execute_command(input: &str) {
         "wards" => cmd_wards(),            // Security wards (ASLR, W^X)
         "sigils" => cmd_sigils(),          // Weaver's Sigils (stack canaries)
         "permanence" => cmd_permanence(),  // Rune of Permanence (immutable structures)
+        "fate" => cmd_fate(args),          // Concordance of Fates (RBAC)
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -583,6 +584,7 @@ fn show_help_page(page: usize) {
             crate::println!("  wards              - Display security protections (ASLR, W^X)");
             crate::println!("  sigils             - Show The Weaver's Sigils (canary protection)");
             crate::println!("  permanence         - View The Rune of Permanence (immutable structures)");
+            crate::println!("  fate <cmd>         - Manage the Concordance of Fates (RBAC)");
             crate::println!();
             crate::println!("Thread Management:");
             crate::println!("  weave-new [name]   - Spawn a new thread into the Loom");
@@ -1139,4 +1141,9 @@ fn cmd_sigils() {
 
 fn cmd_permanence() {
     crate::permanence_command::cmd_permanence();
+}
+
+/// FATE - Manage the Concordance of Fates (RBAC)
+fn cmd_fate(args: &str) {
+    crate::fate_command::cmd_fate(args);
 }

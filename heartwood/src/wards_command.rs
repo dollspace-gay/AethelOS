@@ -34,6 +34,26 @@ pub fn show_wards_page(page: usize) {
             crate::println!("    Thread stacks randomized with 0-64KB entropy");
             crate::println!();
 
+            // KASLR Status (Ward of Unseen Paths)
+            let kaslr_enabled = crate::attunement::ward_of_unseen_paths::is_kaslr_enabled();
+            crate::println!("  Ward of Unseen Paths (KASLR): {}",
+                if kaslr_enabled { "✓ Active" } else { "○ Inactive" });
+            if kaslr_enabled {
+                let offset = crate::attunement::ward_of_unseen_paths::get_kaslr_offset();
+                let offset_mb = offset / (1024 * 1024);
+                let entropy_bits = crate::attunement::ward_of_unseen_paths::get_entropy_bits();
+                let range_mb = crate::attunement::ward_of_unseen_paths::get_entropy_range_mb();
+                let kernel_base = crate::attunement::ward_of_unseen_paths::get_kernel_base();
+
+                crate::println!("    Kernel base: 0x{:016x}", kernel_base);
+                crate::println!("    Random offset: +{} MB (0x{:08x})", offset_mb, offset);
+                crate::println!("    Entropy: {} bits ({} MB range)", entropy_bits, range_mb);
+                crate::println!("    The Heartwood wanders - ancient maps are useless");
+            } else {
+                crate::println!("    KASLR not enabled (kernel at fixed address)");
+            }
+            crate::println!();
+
             // Rune of Permanence Status
             let rune_sealed = crate::mana_pool::rune_of_permanence::is_sealed();
             crate::println!("  Rune of Permanence (Immutable Structures): {}",
@@ -42,6 +62,59 @@ pub fn show_wards_page(page: usize) {
                 crate::println!("    Protected: IDT, GDT, TSS, Security Policy");
                 crate::println!("    Pages: {} read-only",
                     crate::mana_pool::rune_of_permanence::get_rune_page_count());
+            }
+            crate::println!();
+
+            // Ward of Anonymity Status
+            let anonymity_enabled = crate::attunement::ward_of_anonymity::is_anonymity_enabled();
+            crate::println!("  Ward of Anonymity (Symbol Hiding): {}",
+                if anonymity_enabled { "✓ Active" } else { "○ Inactive" });
+            if anonymity_enabled {
+                crate::println!("    Kernel symbols hidden from unprivileged access");
+                crate::println!("    Function names redacted in errors and panics");
+                crate::println!("    True names of the spirits are sealed");
+            } else {
+                crate::println!("    ⚠ DEBUG MODE: Symbols visible (reduces security)");
+            }
+            crate::println!();
+
+            // Concordance of Fates Status (RBAC)
+            let concordance_sealed = crate::mana_pool::concordance_of_fates::is_sealed();
+            crate::println!("  Concordance of Fates (RBAC): {}",
+                if concordance_sealed { "✓ Sealed" } else { "○ Unsealed" });
+            if concordance_sealed {
+                let fate_count = crate::mana_pool::concordance_of_fates::get_fate_count();
+                let subject_count = crate::mana_pool::concordance_of_fates::get_subject_count();
+                crate::println!("    Fates defined: {}", fate_count);
+                crate::println!("    Subjects bound: {}", subject_count);
+                crate::println!("    Every thread's destiny is written in the Concordance");
+            }
+            crate::println!();
+
+            // Ward of Sacred Boundaries Status (SMEP/SMAP)
+            let ward_enabled = crate::attunement::ward_of_sacred_boundaries::is_ward_enabled();
+            crate::println!("  Ward of Sacred Boundaries (SMEP/SMAP): {}",
+                if ward_enabled { "✓ Active" } else { "○ Inactive" });
+            if ward_enabled {
+                // Read CR4 to check which features are actually enabled
+                let cr4: u64;
+                unsafe {
+                    core::arch::asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack));
+                }
+                let smep_bit = (cr4 & (1 << 20)) != 0;
+                let smap_bit = (cr4 & (1 << 21)) != 0;
+
+                if smep_bit {
+                    crate::println!("    ✓ SMEP: Kernel cannot execute user space code");
+                }
+                if smap_bit {
+                    crate::println!("    ✓ SMAP: Kernel cannot access user pointers directly");
+                }
+                if !smep_bit && !smap_bit {
+                    crate::println!("    ⚠ CPU lacks SMEP/SMAP (software checks only)");
+                }
+            } else {
+                crate::println!("    Ward not initialized (software checks only)");
             }
             crate::println!();
 

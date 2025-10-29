@@ -9,6 +9,9 @@ pub mod gdt;
 pub mod idt;
 pub mod keyboard;
 pub mod timer;
+pub mod ward_of_sacred_boundaries;
+pub mod ward_of_unseen_paths;
+pub mod ward_of_anonymity;
 
 use pic8259::ChainedPics;
 use crate::mana_pool::InterruptSafeLock;
@@ -28,8 +31,33 @@ pub static PICS: InterruptSafeLock<ChainedPics> =
 /// This follows The Grand Unification sequence
 pub fn init() {
     crate::println!("◈ Beginning the Grand Attunement...");
+    crate::serial_println!("[ATTUNEMENT] Starting attunement sequence...");
 
     unsafe {
+        // Quest -3: Inscribe the Concordance of Fates (RBAC)
+        crate::println!("  ⟡ Quest -3: Inscribing the Concordance of Fates (RBAC)...");
+        crate::serial_println!("[ATTUNEMENT] About to call init_concordance()...");
+        crate::mana_pool::concordance_of_fates::init_concordance();
+        crate::serial_println!("[ATTUNEMENT] init_concordance() returned successfully");
+        crate::println!("     ✓ The fates of all threads are bound by sacred law");
+
+        // Quest -2: Seal the True Names (Ward of Anonymity)
+        crate::println!("  ⟡ Quest -2: Sealing the True Names (Ward of Anonymity)...");
+        ward_of_anonymity::init_ward();
+        crate::println!("     ✓ The spirits' names are hidden from mortal tongues");
+
+        // Quest -1: Initialize the Ward of Unseen Paths (KASLR) - Must be first!
+        crate::println!("  ⟡ Quest -1: Weaving the Ward of Unseen Paths (KASLR)...");
+        ward_of_unseen_paths::init_kaslr();
+        crate::println!("     ✓ The Heartwood's location is concealed");
+
+        // Quest 0: Raise the Ward of Sacred Boundaries (SMEP/SMAP)
+        crate::println!("  ⟡ Quest 0: Raising the Ward of Sacred Boundaries (SMEP/SMAP)...");
+        match ward_of_sacred_boundaries::init_ward() {
+            Ok(_) => crate::println!("     ✓ The Ward stands vigilant"),
+            Err(e) => crate::println!("     ⚠ Ward partially raised: {}", e),
+        }
+
         // Quest 1: Establish the Boundaries (Setup GDT & TSS)
         crate::println!("  ⟡ Quest 1: Establishing privilege boundaries (GDT & TSS)...");
         gdt::init();

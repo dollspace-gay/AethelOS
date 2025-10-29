@@ -57,6 +57,7 @@ pub mod eldarin;  // The Eldarin Shell
 pub mod wards_command;  // Security wards command
 pub mod sigils_command;  // Weaver's Sigils command
 pub mod permanence_command;  // Rune of Permanence command
+pub mod fate_command;  // Concordance of Fates management (RBAC)
 pub mod stack_protection;  // Stack canary runtime (LLVM support)
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer

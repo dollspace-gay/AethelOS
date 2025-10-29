@@ -15,6 +15,7 @@ echo.
   -m 256M ^
   -display gtk ^
   -no-reboot ^
+  -cpu qemu64,+smep,+smap ^
   -no-shutdown ^
   -d guest_errors
 
