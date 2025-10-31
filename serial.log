@@ -1,0 +1,113 @@
+BSLSR1[+].......Z2AB[123]bAethelOS serial port initialized
+1{W}23456789*DdTtPGg[REMAP][REMAP] Ensuring kernel memory is writable...
+123456789FD[REMAP] ✓ Kernel memory remapped as writable
+[OK][REC]510RMNaAbcdeOPQRSnxsu![LOOM INIT] Interrupts disabled
+1AAAABCDy3Hh[HARBOR INIT] Harbor initialized
+AAAA[LOOM INIT] Complete (interrupts still disabled)
+[GroveManager] Initialized - ready to manage Ring 1 services
+[DEBUG] Before attunement::init()
+[ATTUNEMENT] Starting attunement sequence...
+[ATTUNEMENT] About to call init_concordance()...
+[CONCORDANCE] Initializing the Concordance of Fates...
+[CONCORDANCE] Creating empty Concordance...
+[CONCORDANCE] ✓ Empty Concordance created
+[CONCORDANCE] Defining default Fates...
+AAAAAAAAAAAAAAAAAA[CONCORDANCE] ✓ Default Fates defined
+[CONCORDANCE] Setting default Fate...
+A[CONCORDANCE] ✓ Default Fate set
+[CONCORDANCE] ✓ 2 Fates defined in the sacred scroll
+[CONCORDANCE] ✓ The Concordance of Fates governs all
+[ATTUNEMENT] init_concordance() returned successfully
+[ANON] Initializing Ward of Anonymity...
+[ANON] ✓ True names of the Heartwood are sealed
+[ANON] ✓ Kernel symbols hidden from unprivileged access
+[KASLR] Initializing Ward of the Unseen Paths...
+[KASLR] Using RDRAND for hardware entropy
+[KASLR] Kernel base: 0xffff800000000000 (offset: +0x00000000, 0 MB)
+[KASLR] Entropy: 24 bits (256 MB range)
+[KASLR] ✓ The Ward of the Unseen Paths conceals the Heartwood
+[WARD] Initializing Ward of Sacred Boundaries...
+[WARD] ✓ SMEP (Supervisor Mode Execution Prevention) enabled
+[WARD] ✓ SMAP (Supervisor Mode Access Prevention) enabled
+[WARD] ✓ The Ward of Sacred Boundaries stands vigilant
+[PER_CPU] ✓ Bootstrap processor per-CPU data initialized
+[PER_CPU]   GS base: 0xffffffff802193e8
+[PER_CPU]   Kernel stack: 0xffffffff80219420 - 0xffffffff80229420 (64 KB)
+[PER_CPU]   ✓ Dedicated syscall stack configured (static allocation)
+[SYSCALL] Initializing syscall/sysret mechanism...
+[SYSCALL]   ✓ SCE bit enabled in IA32_EFER
+[SYSCALL]   ✓ IA32_STAR configured (kernel CS=0x08, user base=0x10)
+[SYSCALL]   ✓ IA32_LSTAR set to 0xffffffff8016164c
+[SYSCALL]   ✓ IA32_FMASK configured (mask IF, DF, TF)
+[SYSCALL] ✓ Syscall/sysret mechanism ready
+[DEBUG] Before PICS.lock()
+[DEBUG] After PICS.initialize()
+[DEBUG] Before idt::init()
+[DEBUG] After idt::init()
+[DEBUG] Before keyboard::init()
+[DEBUG] After keyboard::init()
+[DEBUG] Before sti
+[DEBUG] After sti - interrupts enabled
+[DEBUG] About to print Chain of Listening
+[DEBUG] After Chain of Listening println
+[DEBUG] After attunement::init() returned
+[DEBUG] After Attunement complete println
+[DEBUG] Before security policy init
+[DEBUG] After security policy display
+[DEBUG] Before eldarin::init()
+[ELDARIN] Starting init
+[ELDARIN] Buffer created
+[ELDARIN] Lock created
+[ELDARIN] Buffer written
+[ELDARIN] Buffer initialized flag set
+[ELDARIN] History created
+[ELDARIN] History lock created
+[ELDARIN] History written
+[ELDARIN] History initialized flag set
+[ELDARIN] Init complete!
+[DEBUG] After eldarin::init() returned
+[DEBUG] After Shell ready println
+[DEBUG] About to detect storage
+AAAAA3H[FUNC:get_idle_ctx]XY[FUNC:idle_prep_handoff][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP][FUNC:yield_now][YIELD] After prepare_yield: should_switch=true, new_kernel_stack=None
+[YIELD] Inside should_switch block
+[YIELD] is_user_thread=false
+[COOP]

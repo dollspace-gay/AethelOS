@@ -27,7 +27,7 @@ pub mod syscalls;
 pub mod elf_loader;
 
 pub use scheduler::{Scheduler, SchedulerStats};
-pub use thread::{Thread, ThreadId, ThreadState, ThreadPriority};
+pub use thread::{Thread, ThreadId, ThreadState, ThreadPriority, ThreadType};
 pub use harmony::{HarmonyAnalyzer, HarmonyMetrics};
 pub use vessel::{Vessel, VesselId, VesselState};
 pub use harbor::{Harbor, HarborStats};
@@ -304,6 +304,7 @@ pub fn create_user_thread(
             thread_id,
             context,
             priority,
+            ThreadType::User,  // This is a Ring 3 user thread
             Some(vessel_id),
         );
 
@@ -315,6 +316,96 @@ pub fn create_user_thread(
                                thread_id.0, vessel_id.0, entry_point);
 
         Ok(thread_id)
+    })
+}
+
+/// Create a Ring 1 service thread for a Grove (privileged service)
+///
+/// # Arguments
+/// * `vessel_id` - The Vessel (service process) this thread belongs to
+/// * `entry_point` - Virtual address where service execution begins
+/// * `service_stack_top` - Top of the service's stack (16-byte aligned)
+/// * `priority` - Thread priority level
+///
+/// # Returns
+/// * `Ok(ThreadId)` - The ID of the newly created service thread
+/// * `Err(LoomError)` - If thread creation fails
+pub fn create_service_thread(
+    vessel_id: VesselId,
+    entry_point: u64,
+    service_stack_top: u64,
+    priority: ThreadPriority,
+) -> Result<ThreadId, LoomError> {
+    without_interrupts(|| {
+        let mut loom = unsafe { get_loom().lock() };
+
+        // Get Vessel info (page table address)
+        let harbor = get_harbor().lock();
+        let vessel = harbor.find_vessel(vessel_id)
+            .ok_or(LoomError::VesselNotFound)?;
+        let page_table_phys = vessel.page_table_phys();
+        drop(harbor);
+
+        // Generate thread ID
+        let thread_id = ThreadId(loom.next_thread_id);
+        loom.next_thread_id += 1;
+
+        // Create Ring 1 service context
+        let context = ThreadContext::new_service_mode(
+            entry_point,
+            service_stack_top,
+            page_table_phys,
+        );
+
+        // Create thread with pre-initialized context
+        let thread = Thread::new_with_context(
+            thread_id,
+            context,
+            priority,
+            ThreadType::Service,  // This is a Ring 1 service thread
+            Some(vessel_id),
+        );
+
+        // Add to thread list and ready queue
+        loom.threads.push(thread);
+        loom.ready_queue.push_back(thread_id);
+
+        crate::serial_println!("[LOOM] Created service thread {} for Vessel {} at entry {:#x}",
+                              thread_id.0, vessel_id.0, entry_point);
+
+        Ok(thread_id)
+    })
+}
+
+/// Terminate a thread by ID
+///
+/// Marks the thread as Fading so it won't be scheduled again.
+/// The thread's resources will be cleaned up by the scheduler.
+///
+/// # Arguments
+/// * `thread_id` - The ID of the thread to terminate
+///
+/// # Returns
+/// * `Ok(())` - Thread marked as Fading
+/// * `Err(LoomError)` - If thread not found
+pub fn terminate_thread(thread_id: ThreadId) -> Result<(), LoomError> {
+    without_interrupts(|| {
+        unsafe {
+            let mut loom = get_loom().lock();
+
+            // Find the thread and mark it as Fading
+            if let Some(thread) = loom.threads.iter_mut().find(|t| t.id() == thread_id) {
+                thread.set_state(ThreadState::Fading);
+
+                // Remove from ready queue if present
+                loom.ready_queue.retain(|&tid| tid != thread_id);
+
+                crate::serial_println!("[LOOM] Terminated thread {:?}", thread_id);
+                Ok(())
+            } else {
+                Err(LoomError::ThreadNotFound)
+            }
+        }
     })
 }
 

@@ -132,6 +132,37 @@ impl ThreadContext {
             cr3: page_table_phys,  // Vessel's page table
         }
     }
+
+    /// Create a new context for Ring 1 service mode (privileged Grove)
+    ///
+    /// # Arguments
+    /// * `entry_point` - Where the service thread should start executing
+    /// * `service_stack_top` - Top of the service's stack (in service address space)
+    /// * `page_table_phys` - Physical address of PML4 (CR3 value)
+    ///
+    /// # Returns
+    /// A context ready for Ring 1 execution via IRETQ or context switch
+    pub fn new_service_mode(
+        entry_point: u64,
+        service_stack_top: u64,
+        page_table_phys: u64,
+    ) -> Self {
+        ThreadContext {
+            // General purpose registers start at zero
+            r15: 0, r14: 0, r13: 0, r12: 0,
+            rbp: 0, rbx: 0, r11: 0, r10: 0,
+            r9: 0, r8: 0, rax: 0, rcx: 0,
+            rdx: 0, rsi: 0, rdi: 0,
+
+            // Special registers for RING 1 (privileged service)
+            rip: entry_point,
+            cs: 0x28 | 1,  // Service code segment (GDT index 5) | RPL=1
+            rflags: 0x202,  // Interrupts enabled (IF flag set)
+            rsp: service_stack_top,  // Service stack (must be 16-byte aligned)
+            ss: 0x30 | 1,  // Service data segment (GDT index 6) | RPL=1
+            cr3: page_table_phys,  // Service's page table (isolated address space)
+        }
+    }
 }
 
 /// Switch from the current thread context to a new thread context

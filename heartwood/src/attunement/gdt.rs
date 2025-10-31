@@ -90,6 +90,32 @@ impl GdtEntry {
         }
     }
 
+    /// Create a service code segment (Ring 1, executable, readable)
+    /// Ring 1 is for privileged services (Groves) that sit between kernel and userspace
+    pub const fn service_code() -> Self {
+        GdtEntry {
+            limit_low: 0xFFFF,
+            base_low: 0,
+            base_middle: 0,
+            access: 0b10101010,  // Present, Ring 1, Code, Execute/Read
+            granularity: 0b10101111,  // 4KB granularity, 64-bit, limit high = 0xF
+            base_high: 0,
+        }
+    }
+
+    /// Create a service data segment (Ring 1, writable)
+    /// Ring 1 is for privileged services (Groves) that sit between kernel and userspace
+    pub const fn service_data() -> Self {
+        GdtEntry {
+            limit_low: 0xFFFF,
+            base_low: 0,
+            base_middle: 0,
+            access: 0b10100010,  // Present, Ring 1, Data, Read/Write
+            granularity: 0b10001111,  // 4KB granularity, 64-bit (D/B=0), limit high = 0xF
+            base_high: 0,
+        }
+    }
+
     /// Create a TSS descriptor from a TSS reference
     pub fn tss(tss: &'static TaskStateSegment) -> [GdtEntry; 2] {
         let ptr = tss as *const _ as u64;
@@ -123,6 +149,9 @@ impl GdtEntry {
 pub struct TaskStateSegment {
     reserved_1: u32,
     /// Privilege stack pointers (RSP for rings 0-2)
+    /// rsp[0] = Ring 0 (kernel) stack
+    /// rsp[1] = Ring 1 (service) stack
+    /// rsp[2] = Ring 2 (unused)
     pub rsp: [u64; 3],
     reserved_2: u64,
     /// Interrupt stack table (IST 1-7)
@@ -147,9 +176,14 @@ impl TaskStateSegment {
         }
     }
 
-    /// Set the kernel stack pointer (used when switching from Ring 3 to Ring 0)
+    /// Set the kernel stack pointer (used when switching from Ring 3/1 to Ring 0)
     pub fn set_kernel_stack(&mut self, stack_ptr: u64) {
         self.rsp[0] = stack_ptr;
+    }
+
+    /// Set the service stack pointer (used when switching from Ring 3 to Ring 1)
+    pub fn set_service_stack(&mut self, stack_ptr: u64) {
+        self.rsp[1] = stack_ptr;
     }
 
     /// Set an interrupt stack (IST entry)
@@ -170,7 +204,7 @@ struct GdtPointer {
 /// The Global Descriptor Table
 #[repr(align(16))]
 pub struct GlobalDescriptorTable {
-    entries: [GdtEntry; 8],  // Null, K_Code, K_Data, U_Code, U_Data, TSS_Low, TSS_High, Reserved
+    entries: [GdtEntry; 10],  // Null, K_Code, K_Data, U_Data, U_Code, S_Code, S_Data, TSS_Low, TSS_High, Reserved
     len: usize,
 }
 
@@ -178,12 +212,12 @@ impl GlobalDescriptorTable {
     /// Create a new GDT with default segments
     pub const fn new() -> Self {
         GlobalDescriptorTable {
-            entries: [GdtEntry::null(); 8],
+            entries: [GdtEntry::null(); 10],
             len: 1,  // Start with null descriptor
         }
     }
 
-    /// Initialize the GDT with kernel and user segments
+    /// Initialize the GDT with kernel, user, and service segments
     pub fn initialize(&mut self, tss: &'static TaskStateSegment) {
         self.len = 1;  // Reset to just null descriptor
 
@@ -205,7 +239,15 @@ impl GlobalDescriptorTable {
         self.entries[self.len] = GdtEntry::user_code();
         self.len += 1;
 
-        // Add TSS (takes 2 entries in 64-bit mode)
+        // Add service code segment (index 5, selector 0x28) - Ring 1 for Groves
+        self.entries[self.len] = GdtEntry::service_code();
+        self.len += 1;
+
+        // Add service data segment (index 6, selector 0x30) - Ring 1 for Groves
+        self.entries[self.len] = GdtEntry::service_data();
+        self.len += 1;
+
+        // Add TSS (takes 2 entries in 64-bit mode, indices 7-8)
         let tss_entries = GdtEntry::tss(tss);
         self.entries[self.len] = tss_entries[0];
         self.len += 1;
@@ -253,8 +295,8 @@ impl GlobalDescriptorTable {
     /// Load the Task State Segment
     pub fn load_tss(&self) {
         unsafe {
-            // TSS selector is at index 5, so selector = 5 * 8 = 0x28
-            asm!("ltr ax", in("ax") 0x28u16, options(nostack, preserves_flags));
+            // TSS selector is at index 7, so selector = 7 * 8 = 0x38
+            asm!("ltr ax", in("ax") selectors::TSS, options(nostack, preserves_flags));
         }
     }
 }
@@ -276,8 +318,14 @@ pub mod selectors {
     /// MUST be USER_DATA + 8 for sysret compatibility
     pub const USER_CODE: u16 = 0x20 | 3;  // RPL = 3, index 4
 
-    /// TSS selector
-    pub const TSS: u16 = 0x28;
+    /// Service code segment selector (Ring 1) - For privileged Groves
+    pub const SERVICE_CODE: u16 = 0x28 | 1;  // RPL = 1, index 5
+
+    /// Service data segment selector (Ring 1) - For privileged Groves
+    pub const SERVICE_DATA: u16 = 0x30 | 1;  // RPL = 1, index 6
+
+    /// TSS selector (updated for Ring 1 segments)
+    pub const TSS: u16 = 0x38;  // Index 7
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

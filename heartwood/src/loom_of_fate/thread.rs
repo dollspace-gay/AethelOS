@@ -7,6 +7,20 @@ use super::vessel::VesselId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ThreadId(pub u64);
 
+/// The type of thread, determining its privilege level
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadType {
+    /// Kernel thread (Ring 0) - Full system access
+    Kernel,
+
+    /// Service thread (Ring 1) - Privileged service (Grove)
+    /// Runs with elevated privileges but isolated from kernel
+    Service,
+
+    /// User thread (Ring 3) - Unprivileged application
+    User,
+}
+
 /// The state of a thread in its lifecycle
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadState {
@@ -39,6 +53,9 @@ pub struct Thread {
     pub(crate) state: ThreadState,
     pub(crate) priority: ThreadPriority,
 
+    /// The type of thread (Kernel, Service, or User)
+    pub(crate) thread_type: ThreadType,
+
     /// Entry point function - kept for debugging/inspection
     #[allow(dead_code)]
     pub(crate) entry_point: fn() -> !,
@@ -58,7 +75,7 @@ pub struct Thread {
     pub(crate) sigil: u64,
 
     /// The Vessel (process) this thread belongs to
-    /// None for kernel threads that don't belong to any Vessel
+    /// None for kernel threads, Some(id) for service/user threads
     pub(crate) vessel_id: Option<VesselId>,
 
     // Harmony tracking
@@ -72,7 +89,7 @@ pub struct Thread {
 }
 
 impl Thread {
-    /// Create a new thread with allocated stack
+    /// Create a new kernel thread with allocated stack
     ///
     /// # Arguments
     /// * `id` - Unique thread identifier
@@ -80,16 +97,14 @@ impl Thread {
     /// * `priority` - Thread priority level
     /// * `stack_bottom` - Low address of thread's stack
     /// * `stack_top` - High address of thread's stack
-    /// * `vessel_id` - VesselId this thread belongs to (None for kernel threads)
     pub fn new(
         id: ThreadId,
         entry_point: fn() -> !,
         priority: ThreadPriority,
         stack_bottom: u64,
         stack_top: u64,
-        vessel_id: Option<VesselId>,
     ) -> Self {
-        // Create initial context for this thread
+        // Create initial context for this thread (kernel mode, Ring 0)
         let context = ThreadContext::new(entry_point as u64, stack_top);
 
         // Generate unique Weaver's Sigil (stack canary) for this thread
@@ -104,12 +119,13 @@ impl Thread {
             id,
             state: ThreadState::Resting,
             priority,
+            thread_type: ThreadType::Kernel,
             entry_point,
             context,
             stack_bottom,
             stack_top,
             sigil,
-            vessel_id,
+            vessel_id: None,  // Kernel threads don't belong to a Vessel
             resource_usage: ResourceUsage::default(),
             harmony_score: 1.0, // Start in perfect harmony
             time_slices_used: 0,
@@ -136,14 +152,15 @@ impl Thread {
 
     /// Create a thread with a pre-initialized context
     ///
-    /// Used for user-mode threads where the context is set up specially
-    /// for ring 3 execution.
+    /// Used for service/user-mode threads where the context is set up specially
+    /// for Ring 1 or Ring 3 execution.
     ///
     /// # Arguments
     /// * `id` - Unique thread identifier
-    /// * `context` - Pre-initialized ThreadContext (for user mode)
+    /// * `context` - Pre-initialized ThreadContext (for service/user mode)
     /// * `priority` - Thread priority level
-    /// * `vessel_id` - VesselId this thread belongs to (Some for user threads)
+    /// * `thread_type` - Type of thread (Service or User)
+    /// * `vessel_id` - VesselId this thread belongs to
     ///
     /// # Returns
     /// A new Thread with the given context
@@ -151,12 +168,13 @@ impl Thread {
         id: ThreadId,
         context: ThreadContext,
         priority: ThreadPriority,
+        thread_type: ThreadType,
         vessel_id: Option<VesselId>,
     ) -> Self {
         // Generate unique Weaver's Sigil (stack canary) for this thread
         let sigil = Self::generate_sigil();
 
-        // Dummy entry point (not used for user threads)
+        // Dummy entry point (not used for service/user threads)
         fn dummy_entry() -> ! {
             loop {
                 unsafe {
@@ -169,9 +187,10 @@ impl Thread {
             id,
             state: ThreadState::Resting,
             priority,
+            thread_type,
             entry_point: dummy_entry,
             context,
-            stack_bottom: 0,  // User stack, we don't track it in Thread
+            stack_bottom: 0,  // Service/user stack, we don't track it in Thread
             stack_top: 0,
             sigil,
             vessel_id,
@@ -203,6 +222,10 @@ impl Thread {
 
     pub fn set_state(&mut self, state: ThreadState) {
         self.state = state;
+    }
+
+    pub fn thread_type(&self) -> ThreadType {
+        self.thread_type
     }
 
     pub fn priority(&self) -> ThreadPriority {

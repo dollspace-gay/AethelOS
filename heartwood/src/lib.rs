@@ -71,12 +71,14 @@ pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer
 pub mod drivers;  // Hardware device drivers
 pub mod test_programs;  // Embedded test programs
+pub mod groves;  // Grove Manager (Ring 1 service registry)
 
 // Re-export key types
 pub use nexus::{Message, MessageType, MessagePriority, NexusError};
 pub use loom_of_fate::{ThreadId, ThreadState, ThreadPriority, LoomError};
 pub use mana_pool::{ObjectHandle, AllocationPurpose, ManaError};
 pub use vfs::{FileSystem, Path, FsError, DirEntry, FileStat};
+pub use groves::{ServiceId, ServiceState, GroveError};
 
 /// Panic handler for lib builds
 #[cfg(not(test))]

@@ -122,7 +122,7 @@ impl Scheduler {
 
         // Create the thread with its stack
         // Pass None for vessel_id since current threads are kernel threads
-        let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top, None);
+        let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top);
 
         self.threads.push(thread);
         self.ready_queue.push_back(thread_id);

@@ -377,6 +377,11 @@ fn heartwood_init() {
     loom_of_fate::init();
     println!("  ✓ Loom ready");
 
+    // Initialize the Grove Manager (Ring 1 service registry)
+    println!("◈ Awakening the Groves...");
+    heartwood::groves::manager::init();
+    println!("  ✓ Grove Manager ready (Ring 1 service registry)");
+
     // Initialize heap canaries (after thread creation to avoid early boot issues)
     // Fixed: User data is now padded to 8-byte alignment to ensure post-canary is aligned
     unsafe {

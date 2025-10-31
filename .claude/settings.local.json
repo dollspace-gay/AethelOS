@@ -127,7 +127,8 @@
       "Bash(printf:*)",
       "Bash(wsl grep:*)",
       "Bash(wsl rust-objdump:*)",
-      "Bash(wsl objdump:*)"
+      "Bash(wsl objdump:*)",
+      "Bash(bd dep tree:*)"
     ],
     "deny": [],
     "ask": []

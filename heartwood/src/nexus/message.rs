@@ -88,6 +88,7 @@ pub enum SignalType {
     ThreadFading,     // Thread exiting
     SystemHarmony,    // System in good state
     SystemDisharmony, // System under stress
+    ServiceShutdown,  // Request service to shut down gracefully
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
