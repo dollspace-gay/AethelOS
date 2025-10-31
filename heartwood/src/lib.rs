@@ -24,12 +24,20 @@ static GLOBAL_ALLOCATOR: BuddyAllocator = BuddyAllocator::new();
 /// Initialize the global allocator
 ///
 /// MUST be called BEFORE any heap allocations occur (including Box, Vec, etc.)
+///
+/// After higher-half kernel migration, the heap is located in higher-half virtual address space.
+/// Physical memory at 4MB-12MB maps to virtual 0xFFFF_8000_0040_0000+.
 pub fn init_global_allocator() {
     unsafe {
-        // Initialize the global allocator with heap region: 4MB - 12MB (8MB total)
-        // Increased from 4MB due to allocations during disk mounting
-        const HEAP_START: usize = 0x400000;  // 4MB
-        const HEAP_SIZE: usize = 0x800000;   // 8MB (doubled)
+        // Heap in higher-half address space (top 2GB for -mcmodel=kernel)
+        // Memory layout:
+        //   - 1MB-3MB: Kernel code/data/bss
+        //   - 4MB (0x400000): Stack top (grows DOWN towards kernel)
+        //   - 12MB (0xC00000): Heap start (grows UP)
+        // This gives stack 9MB of space (0x400000 to 0xC00000)
+        const KERNEL_BASE: usize = 0xFFFFFFFF80000000;
+        const HEAP_START: usize = KERNEL_BASE + 0xC00000;  // 12MB in top 2GB
+        const HEAP_SIZE: usize = 0x800000;   // 8MB (ends at 20MB / 0x1400000)
 
         GLOBAL_ALLOCATOR.init(HEAP_START, HEAP_SIZE);
     }
@@ -62,6 +70,7 @@ pub mod stack_protection;  // Stack canary runtime (LLVM support)
 pub mod irq_safe_mutex;  // Interrupt-safe mutex primitive
 pub mod vfs;  // Virtual File System layer
 pub mod drivers;  // Hardware device drivers
+pub mod test_programs;  // Embedded test programs
 
 // Re-export key types
 pub use nexus::{Message, MessageType, MessagePriority, NexusError};

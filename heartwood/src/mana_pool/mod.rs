@@ -28,9 +28,11 @@ pub mod aslr;     // Address Space Layout Randomization
 pub mod sealing;  // Cryptographic capability sealing
 pub mod heap_canaries;  // Heap buffer overflow protection
 pub mod page_tables;  // x86_64 page table management
+pub mod user_space;   // User address space management for Vessels
 pub mod security_policy;  // Immutable security configuration
 pub mod rune_of_permanence;  // Hardware-enforced kernel data immutability
 pub mod concordance_of_fates;  // Role-Based Access Control (RBAC)
+pub mod kernel_remap;  // Kernel memory write permission remapping
 
 pub use object_manager::{ObjectManager, ObjectHandle, ObjectType, ObjectInfo};
 pub use capability::{Capability, CapabilityRights, CapabilityId, SealedCapability};
@@ -38,6 +40,9 @@ pub use capability_table::{CapabilityTable, CapabilityError};
 pub use sanctuary::Sanctuary;
 pub use ephemeral_mist::EphemeralMist;
 pub use interrupt_lock::InterruptSafeLock;
+pub use user_space::{UserAddressSpace, MemoryRegion, RegionType, create_address_space_from_elf};
+pub use page_tables::{map_user_page, clone_kernel_page_table, flush_tlb};
+pub use kernel_remap::ensure_kernel_memory_writable;
 
 use core::mem::MaybeUninit;
 use alloc::boxed::Box;
@@ -181,7 +186,7 @@ pub fn init() {
 
         // Create interrupt-safe lock and write to static
         serial_out(b'P'); // Before InterruptSafeLock::new
-        let lock = InterruptSafeLock::new(mana_pool_on_heap);
+        let lock = InterruptSafeLock::new(mana_pool_on_heap, "MANA_POOL");
         serial_out(b'Q'); // After InterruptSafeLock::new
 
         core::ptr::write(core::ptr::addr_of_mut!(MANA_POOL).cast(), lock);

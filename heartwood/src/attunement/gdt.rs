@@ -61,7 +61,7 @@ impl GdtEntry {
             base_low: 0,
             base_middle: 0,
             access: 0b10010010,  // Present, Ring 0, Data, Read/Write
-            granularity: 0b11001111,  // 4KB granularity, 32-bit, limit high = 0xF
+            granularity: 0b11001111,  // 4KB granularity, 32-bit (leave as-is for kernel), limit high = 0xF
             base_high: 0,
         }
     }
@@ -85,7 +85,7 @@ impl GdtEntry {
             base_low: 0,
             base_middle: 0,
             access: 0b11110010,  // Present, Ring 3, Data, Read/Write
-            granularity: 0b11001111,  // 4KB granularity, 32-bit, limit high = 0xF
+            granularity: 0b10001111,  // 4KB granularity, 64-bit (D/B=0), limit high = 0xF
             base_high: 0,
         }
     }
@@ -195,12 +195,14 @@ impl GlobalDescriptorTable {
         self.entries[self.len] = GdtEntry::kernel_data();
         self.len += 1;
 
-        // Add user code segment (index 3, selector 0x18)
-        self.entries[self.len] = GdtEntry::user_code();
+        // === FIX: User segments must be in order SS, then CS for sysret ===
+        // Add user data segment (index 3, selector 0x18) - Used as SS by sysret
+        self.entries[self.len] = GdtEntry::user_data();
         self.len += 1;
 
-        // Add user data segment (index 4, selector 0x20)
-        self.entries[self.len] = GdtEntry::user_data();
+        // Add user code segment (index 4, selector 0x20) - Used as CS by sysret
+        // sysret requires: CS selector = SS selector + 8
+        self.entries[self.len] = GdtEntry::user_code();
         self.len += 1;
 
         // Add TSS (takes 2 entries in 64-bit mode)
@@ -266,11 +268,13 @@ pub mod selectors {
     /// Kernel data segment selector (Ring 0)
     pub const KERNEL_DATA: u16 = 0x10;
 
-    /// User code segment selector (Ring 3)
-    pub const USER_CODE: u16 = 0x18 | 3;  // RPL = 3
+    /// User data segment selector (Ring 3) - Stack Segment for sysret
+    /// MUST be 8 bytes before USER_CODE for sysret compatibility
+    pub const USER_DATA: u16 = 0x18 | 3;  // RPL = 3, index 3
 
-    /// User data segment selector (Ring 3)
-    pub const USER_DATA: u16 = 0x20 | 3;  // RPL = 3
+    /// User code segment selector (Ring 3) - Code Segment for sysret
+    /// MUST be USER_DATA + 8 for sysret compatibility
+    pub const USER_CODE: u16 = 0x20 | 3;  // RPL = 3, index 4
 
     /// TSS selector
     pub const TSS: u16 = 0x28;
@@ -344,4 +348,48 @@ pub unsafe fn get_tss() -> &'static TaskStateSegment {
         panic!("GDT/TSS not initialized!");
     }
     TSS.assume_init_ref()
+}
+
+/// Get a mutable reference to the TSS
+///
+/// # Safety
+/// Must only be called after init()
+/// Caller must ensure no concurrent access to TSS
+pub unsafe fn get_tss_mut() -> &'static mut TaskStateSegment {
+    if !GDT_INITIALIZED {
+        panic!("GDT/TSS not initialized!");
+    }
+    TSS.assume_init_mut()
+}
+
+/// Update the kernel stack pointer in the TSS and per-CPU data
+///
+/// This should be called during context switches when switching to a
+/// user-mode thread. The kernel_stack value will be loaded into RSP
+/// when a syscall or interrupt occurs from user mode.
+///
+/// **CRITICAL**: This updates BOTH:
+/// - TSS.rsp[0] - Used by hardware interrupts
+/// - GS:[8] (PerCpuData.kernel_stack_top) - Used by syscall instruction
+///
+/// # Arguments
+/// * `kernel_stack` - Top of kernel stack (RSP value for syscall/interrupt entry)
+///
+/// # Safety
+/// Must be called after GDT/TSS initialization and per-CPU data initialization
+pub unsafe fn set_kernel_stack(kernel_stack: u64) {
+    crate::serial_println!("[GDT] set_kernel_stack: About to get_tss_mut()");
+    // Update TSS for hardware interrupts
+    let tss = get_tss_mut();
+    crate::serial_println!("[GDT] set_kernel_stack: Got TSS, setting to {:#x}", kernel_stack);
+    tss.set_kernel_stack(kernel_stack);
+    crate::serial_println!("[GDT] set_kernel_stack: TSS updated");
+
+    // Update per-CPU data for syscall instruction
+    // syscall_entry reads from GS:[8] to load kernel stack
+    crate::serial_println!("[GDT] set_kernel_stack: About to get per_cpu");
+    let per_cpu = crate::attunement::per_cpu::get_mut();
+    crate::serial_println!("[GDT] set_kernel_stack: Got per_cpu, updating GS:[8]");
+    per_cpu.kernel_stack_top = kernel_stack;
+    crate::serial_println!("[GDT] set_kernel_stack: ✓ Complete");
 }

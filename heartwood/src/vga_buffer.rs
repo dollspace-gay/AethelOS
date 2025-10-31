@@ -3,11 +3,14 @@
 //! Provides early text output before the full Weave is initialized.
 
 use core::fmt;
-use crate::irq_safe_mutex::IrqSafeMutex;
-use core::mem::MaybeUninit;
 
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
+
+// Higher-half VGA buffer address - physical 0xB8000 mapped to top 2GB
+pub const KERNEL_VMA: usize = 0xFFFFFFFF80000000;
+pub const VGA_BUFFER_PHYS: usize = 0xB8000;
+pub const VGA_BUFFER_ADDRESS: usize = KERNEL_VMA + VGA_BUFFER_PHYS; // 0xFFFFFFFF800B8000
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +60,7 @@ pub struct Writer {
     column_position: usize,
     row_position: usize,
     color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    buffer: *mut Buffer,  // Raw pointer instead of reference to avoid lifetime issues
 }
 
 /// VGA cursor control via I/O ports
@@ -111,8 +114,9 @@ impl Writer {
 
                     // Write a space to erase the character
                     unsafe {
+                        let buffer = &mut *self.buffer;
                         core::ptr::write_volatile(
-                            &mut self.buffer.chars[row][col] as *mut ScreenChar,
+                            &mut buffer.chars[row][col] as *mut ScreenChar,
                             ScreenChar {
                                 ascii_character: b' ',
                                 color_code: self.color_code,
@@ -135,8 +139,9 @@ impl Writer {
 
                 // Use volatile write to prevent compiler optimization
                 unsafe {
+                    let buffer = &mut *self.buffer;
                     core::ptr::write_volatile(
-                        &mut self.buffer.chars[row][col] as *mut ScreenChar,
+                        &mut buffer.chars[row][col] as *mut ScreenChar,
                         ScreenChar {
                             ascii_character: byte,
                             color_code,
@@ -151,17 +156,11 @@ impl Writer {
     }
 
     pub fn write_string(&mut self, s: &str) {
-        unsafe {
-            serial_out(b'$'); // Entering write_string
-        }
         for byte in s.bytes() {
             match byte {
                 0x20..=0x7e | b'\n' | b'\x08' => self.write_byte(byte),
                 _ => self.write_byte(0xfe), // ■ for unprintable
             }
-        }
-        unsafe {
-            serial_out(b'%'); // Exiting write_string
         }
     }
 
@@ -173,14 +172,15 @@ impl Writer {
             self.row_position += 1;
         } else {
             // Screen is full, scroll up
-            for row in 1..BUFFER_HEIGHT {
-                for col in 0..BUFFER_WIDTH {
-                    unsafe {
+            unsafe {
+                let buffer = &mut *self.buffer;
+                for row in 1..BUFFER_HEIGHT {
+                    for col in 0..BUFFER_WIDTH {
                         let character = core::ptr::read_volatile(
-                            &self.buffer.chars[row][col] as *const ScreenChar
+                            &buffer.chars[row][col] as *const ScreenChar
                         );
                         core::ptr::write_volatile(
-                            &mut self.buffer.chars[row - 1][col] as *mut ScreenChar,
+                            &mut buffer.chars[row - 1][col] as *mut ScreenChar,
                             character
                         );
                     }
@@ -197,10 +197,11 @@ impl Writer {
             ascii_character: b' ',
             color_code: self.color_code,
         };
-        for col in 0..BUFFER_WIDTH {
-            unsafe {
+        unsafe {
+            let buffer = &mut *self.buffer;
+            for col in 0..BUFFER_WIDTH {
                 core::ptr::write_volatile(
-                    &mut self.buffer.chars[row][col] as *mut ScreenChar,
+                    &mut buffer.chars[row][col] as *mut ScreenChar,
                     blank
                 );
             }
@@ -214,78 +215,91 @@ impl Writer {
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        unsafe {
-            serial_out(b'@'); // Entering write_str
-        }
         self.write_string(s);
-        unsafe {
-            serial_out(b'#'); // Exiting write_str
-        }
         Ok(())
     }
+    // Default write_fmt() implementation now works correctly with PIC relocation model
 }
 
-// Global VGA writer using MaybeUninit to avoid allocator dependency
-static mut WRITER: MaybeUninit<IrqSafeMutex<Writer>> = MaybeUninit::uninit();
+// Global VGA writer - simple static without mutex for early boot
+// TODO: Add proper synchronization once system is fully initialized
+static mut WRITER: Option<Writer> = None;
 static mut WRITER_INITIALIZED: bool = false;
 
 /// Initialize the VGA text mode writer
 pub fn initialize() {
     unsafe {
-        // Create writer pointing to VGA text buffer
-        let writer = Writer {
-            column_position: 0,
-            row_position: 0,
-            color_code: ColorCode::new(Color::LightCyan, Color::Black),
-            buffer: &mut *(0xb8000 as *mut Buffer),
-        };
+        serial_out(b'['); // Start of initialize
+        serial_out(b'1'); // Before clearing screen
 
-        // Wrap in IRQ-safe mutex and write to static
-        let mutex = IrqSafeMutex::new(writer);
-        core::ptr::write(core::ptr::addr_of_mut!(WRITER).cast(), mutex);
+        // Clear the screen directly without creating Writer yet
+        let vga = VGA_BUFFER_ADDRESS as *mut u16;
+
+        // Clear entire screen with space characters (white on black)
+        for i in 0..(BUFFER_HEIGHT * BUFFER_WIDTH) {
+            core::ptr::write_volatile(vga.add(i), 0x0F20); // Space in white on black
+        }
+
+        serial_out(b'2'); // Screen cleared
+
+        move_cursor(0, 0);
+
+        serial_out(b'3'); // Cursor moved
+
+        // Mark as initialized - WRITER will be created lazily on first print
         WRITER_INITIALIZED = true;
 
-        // Clear the screen
-        let mut writer = (*core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>()).lock();
-        for row in 0..BUFFER_HEIGHT {
-            writer.clear_row(row);
-        }
-        writer.column_position = 0;
-        writer.row_position = 0;
-        move_cursor(0, 0);
+        serial_out(b']'); // End of initialize
     }
 }
 
-/// Get reference to WRITER (assumes initialized)
-unsafe fn get_writer() -> &'static IrqSafeMutex<Writer> {
-    &*core::ptr::addr_of!(WRITER).cast::<IrqSafeMutex<Writer>>()
+/// Get reference to WRITER (creates it lazily on first access)
+fn get_writer() -> &'static mut Writer {
+    unsafe {
+        if WRITER.is_none() {
+            serial_out(b'{'); // Creating WRITER lazily
+
+            let writer = Writer {
+                column_position: 0,
+                row_position: 0,
+                color_code: ColorCode::new(Color::LightCyan, Color::Black),
+                buffer: VGA_BUFFER_ADDRESS as *mut Buffer,
+            };
+
+            serial_out(b'W'); // Writer struct created
+
+            WRITER = Some(writer);
+
+            serial_out(b'}'); // WRITER created
+        }
+
+        WRITER.as_mut().unwrap()
+    }
 }
 
 /// Force unlock the VGA writer (for use before context switches)
 ///
-/// This is a dangerous function that forcibly releases the VGA buffer lock.
-/// It should ONLY be called right before the Great Hand-Off when we know
-/// no other code will try to use the lock.
+/// No-op now that we're not using a mutex during early boot
 pub unsafe fn force_unlock() {
+    // No-op - no mutex to unlock
+}
+
+/// DEBUG: Test write_str directly without write_fmt
+pub unsafe fn test_write_str() {
     if WRITER_INITIALIZED {
-        let writer = &mut *core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>();
-        writer.force_unlock();
+        let writer = get_writer();
+        use core::fmt::Write;
+        let _ = writer.write_str("DIRECT\n");
     }
 }
 
 /// Write a single character without locking (for interrupt handlers)
-/// This is unsafe because it bypasses the mutex, but it's necessary for
-/// interrupt handlers to avoid deadlock
 pub unsafe fn write_char_unlocked(ch: char) {
-    if !WRITER_INITIALIZED {
+    if !WRITER_INITIALIZED || WRITER.is_none() {
         return;
     }
 
-    // Get raw pointer to the writer inside the IRQ-safe mutex
-    let writer_ptr = core::ptr::addr_of_mut!(WRITER).cast::<IrqSafeMutex<Writer>>();
-    // Access the inner Mutex to get the data (unsafe pointer dereference)
-    let inner_mutex = &mut (*writer_ptr).inner;
-    let writer = inner_mutex.get_mut();
+    let writer = WRITER.as_mut().unwrap();
 
     // Write the character directly
     if ch == '\n' {
@@ -300,8 +314,9 @@ pub unsafe fn write_char_unlocked(ch: char) {
                 ascii_character: b' ',
                 color_code: writer.color_code,
             };
+            let buffer = &mut *writer.buffer;
             core::ptr::write_volatile(
-                &mut writer.buffer.chars[row][col] as *mut ScreenChar,
+                &mut buffer.chars[row][col] as *mut ScreenChar,
                 blank
             );
             move_cursor(row, col);
@@ -318,7 +333,7 @@ pub fn clear_screen() {
             return;
         }
 
-        let mut writer = get_writer().lock();
+        let writer = get_writer();
         for row in 0..BUFFER_HEIGHT {
             writer.clear_row(row);
         }
@@ -330,19 +345,28 @@ pub fn clear_screen() {
 
 pub fn print_banner() {
     unsafe {
-        let mut writer = get_writer().lock();
+        serial_out(b'1');
+        let writer = get_writer();
 
+        serial_out(b'2');
         writer.set_color(Color::LightCyan, Color::Black);
+        serial_out(b'3');
         writer.write_string("\n");
+        serial_out(b'4');
         writer.write_string("  ====================================\n");
+        serial_out(b'5');
         writer.set_color(Color::White, Color::Black);
         writer.write_string("       AethelOS - The Heartwood\n");
+        serial_out(b'6');
         writer.set_color(Color::LightGray, Color::Black);
         writer.write_string("    Symbiotic Computing Awakens\n");
+        serial_out(b'7');
         writer.set_color(Color::LightCyan, Color::Black);
         writer.write_string("  ====================================\n");
+        serial_out(b'8');
         writer.set_color(Color::LightCyan, Color::Black);
         writer.write_string("\n");
+        serial_out(b'9');
     }
 }
 
@@ -370,25 +394,11 @@ unsafe fn serial_out(c: u8) {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-
     unsafe {
-        serial_out(b'V'); // VGA print called
         if WRITER_INITIALIZED {
-            serial_out(b'W'); // Writer initialized
-
-            // IrqSafeMutex automatically disables interrupts when locking
-            // and re-enables them when the guard is dropped
-            serial_out(b'G'); // About to get writer
-            let mut writer = get_writer().lock();
-            serial_out(b'+'); // Got lock!
-            writer.write_fmt(args).unwrap();
-            serial_out(b'E'); // Write complete
-            serial_out(b'['); // About to drop
-            drop(writer); // Explicitly drop the guard HERE
-            serial_out(b']'); // Drop complete
-            serial_out(b'D'); // Done writing (after lock released)
-        } else {
-            serial_out(b'U'); // Uninitialized!
+            let writer = get_writer();
+            // Use proper fmt::Write trait - works correctly with PIC relocation model
+            let _ = writer.write_fmt(args);
         }
     }
 }

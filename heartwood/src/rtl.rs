@@ -21,6 +21,9 @@ pub unsafe extern "C" fn rtl_test() {
     serial_out(b'L');
 }
 
+// DISABLED: Let compiler-builtins-mem provide these functions
+// Our custom implementations may conflict with optimized compiler-builtins versions
+/*
 /// Simple, correct memcpy implementation
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
@@ -83,3 +86,4 @@ pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
     }
     0
 }
+*/

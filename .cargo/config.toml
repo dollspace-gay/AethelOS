@@ -1,0 +1,11 @@
+[build]
+target = "heartwood/x86_64-aethelos.json"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.x86_64-aethelos]
+rustflags = [
+    "-C", "link-arg=--script=heartwood/linker.ld",
+]

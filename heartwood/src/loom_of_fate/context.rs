@@ -44,6 +44,7 @@ pub struct ThreadContext {
     pub rflags: u64,   // CPU flags
     pub rsp: u64,      // Stack pointer
     pub ss: u64,       // Stack segment
+    pub cr3: u64,      // Page table base (physical address) - for per-Vessel address spaces
 }
 
 impl ThreadContext {
@@ -82,6 +83,7 @@ impl ThreadContext {
             // (as if a call instruction just pushed a return address)
             rsp: stack_top - 8,
             ss: 0x10,  // Kernel data segment (from GDT)
+            cr3: 0,  // 0 means "use current CR3" (kernel threads share kernel page tables)
         }
     }
 
@@ -93,7 +95,41 @@ impl ThreadContext {
             r9: 0, r8: 0, rax: 0, rcx: 0,
             rdx: 0, rsi: 0, rdi: 0,
             rip: 0, cs: 0, rflags: 0,
-            rsp: 0, ss: 0,
+            rsp: 0, ss: 0, cr3: 0,
+        }
+    }
+
+    /// Create a new context for a user-mode thread (Ring 3)
+    ///
+    /// This creates a context that will start executing in ring 3 (user mode)
+    /// with the specified entry point and user stack.
+    ///
+    /// # Arguments
+    /// * `entry_point` - User space entry point address
+    /// * `user_stack_top` - Top of user stack
+    /// * `page_table_phys` - Physical address of PML4 (CR3 value)
+    ///
+    /// # Returns
+    /// A context ready for ring 3 execution via IRETQ or context switch
+    pub fn new_user_mode(
+        entry_point: u64,
+        user_stack_top: u64,
+        page_table_phys: u64,
+    ) -> Self {
+        ThreadContext {
+            // General purpose registers start at zero
+            r15: 0, r14: 0, r13: 0, r12: 0,
+            rbp: 0, rbx: 0, r11: 0, r10: 0,
+            r9: 0, r8: 0, rax: 0, rcx: 0,
+            rdx: 0, rsi: 0, rdi: 0,
+
+            // Special registers for RING 3
+            rip: entry_point,
+            cs: 0x20 | 3,  // User code segment (GDT index 4) | RPL=3
+            rflags: 0x202,  // Interrupts enabled (IF flag set)
+            rsp: user_stack_top,      // User stack (must be 16-byte aligned for IRETQ)
+            ss: 0x18 | 3,  // User data segment (GDT index 3) | RPL=3
+            cr3: page_table_phys,  // Vessel's page table
         }
     }
 }
@@ -113,6 +149,21 @@ impl ThreadContext {
 #[unsafe(naked)]
 pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_context: *const ThreadContext) {
     core::arch::naked_asm!(
+        // DEBUG: Mark entry to switch_context
+        "mov dx, 0x3f8",
+        "mov al, '['",
+        "out dx, al",
+        "mov al, 'S'",
+        "out dx, al",
+        "mov al, 'W'",
+        "out dx, al",
+        "mov al, ']'",
+        "out dx, al",
+
+        // NOTE: No need to adjust RSP for red zone because interrupts are
+        // disabled by the caller (yield_now uses without_interrupts).
+        // The target spec already has "disable-redzone": true for compiler-generated code.
+
         // Save current context
         // rdi = old_context pointer (first argument)
         // rsi = new_context pointer (second argument)
@@ -158,8 +209,45 @@ pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_c
         // Now restore new context
         // rsi = new_context pointer
 
+        // Check if we need to switch page tables (CR3)
+        // If new_context.cr3 != 0, load it into CR3
+        "mov rax, [rsi + 0xA0]",  // Load CR3 from new context
+        "test rax, rax",           // Check if it's non-zero
+        "jz 2f",                   // Skip if zero (kernel thread)
+
+        // Switch to new page table
+        "mov cr3, rax",
+
+        // DEBUG: Mark CR3 switched
+        "push rax",
+        "push rdx",
+        "mov dx, 0x3f8",
+        "mov al, 'C'",
+        "out dx, al",
+        "mov al, '3'",
+        "out dx, al",
+        "pop rdx",
+        "pop rax",
+
+        "2:",  // Continue with normal context restore
+
+        // DEBUG: Mark before register restore
+        "push rax",
+        "mov dx, 0x3f8",
+        "mov al, 'R'",
+        "out dx, al",
+        "pop rax",
+
         // Restore general purpose registers
         "mov r15, [rsi + 0x00]",
+
+        // DEBUG: After first restore
+        "push rax",
+        "mov dx, 0x3f8",
+        "mov al, '1'",
+        "out dx, al",
+        "pop rax",
+
         "mov r14, [rsi + 0x08]",
         "mov r13, [rsi + 0x10]",
         "mov r12, [rsi + 0x18]",
@@ -173,12 +261,13 @@ pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_c
         "mov rcx, [rsi + 0x58]",
         "mov rdx, [rsi + 0x60]",
 
-        // Restore RSP first (we'll need it)
-        "mov rsp, [rsi + 0x90]",
+        // CRITICAL: Build IRETQ frame on KERNEL stack (current RSP), NOT user stack!
+        // This avoids SMAP issues - we stay on kernel stack, IRETQ switches to user stack
+        // DO NOT do "mov rsp, [rsi + 0x90]" here - that would switch to user stack!
 
         // Push interrupt frame for IRETQ (in reverse order: SS, RSP, RFLAGS, CS, RIP)
-        "push qword ptr [rsi + 0x98]",  // SS
-        "push qword ptr [rsi + 0x90]",  // RSP
+        "push qword ptr [rsi + 0x98]",  // SS (user's SS from context)
+        "push qword ptr [rsi + 0x90]",  // RSP (user's RSP from context)
 
         // Push RFLAGS with IF (interrupt enable) bit set
         "mov rax, [rsi + 0x88]",
@@ -188,11 +277,24 @@ pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_c
         "push qword ptr [rsi + 0x80]",  // CS
         "push qword ptr [rsi + 0x78]",  // RIP
 
+        // Check if we're switching to ring 3 (CS & 3 != 0)
+        "mov rax, [rsi + 0x80]",        // Load CS value
+        "test al, 3",                    // Check RPL bits
+        "jz 3f",                         // Skip swapgs if ring 0
+
+        // Switching to ring 3: Execute swapgs to set up GS for userspace
+        // After swapgs: GsBase = 0 (user), KernelGsBase = per-CPU (for syscall)
+        "swapgs",
+
+        "3:",  // Continue to iretq
+
         // Restore remaining registers
         "mov rdi, [rsi + 0x70]",
         "mov rsi, [rsi + 0x68]",
 
         // Use IRETQ to properly restore the interrupt frame and re-enable interrupts
+        // IRETQ pops: RIP, CS, RFLAGS, RSP, SS
+        // This switches from kernel stack to user stack (if going to ring 3)
         "iretq",
     );
 }
@@ -207,6 +309,21 @@ pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_c
 #[unsafe(naked)]
 pub unsafe extern "C" fn switch_context_cooperative(_old_context: *mut ThreadContext, _new_context: *const ThreadContext) {
     core::arch::naked_asm!(
+        // DEBUG: Mark entry to switch_context_cooperative
+        "mov dx, 0x3f8",
+        "mov al, '['",
+        "out dx, al",
+        "mov al, 'C'",
+        "out dx, al",
+        "mov al, 'O'",
+        "out dx, al",
+        "mov al, 'O'",
+        "out dx, al",
+        "mov al, 'P'",
+        "out dx, al",
+        "mov al, ']'",
+        "out dx, al",
+
         // Save current context (rdi = old_context, rsi = new_context)
 
         // Save callee-saved registers
@@ -232,6 +349,17 @@ pub unsafe extern "C" fn switch_context_cooperative(_old_context: *mut ThreadCon
 
         // Now restore new context from rsi
 
+        // Check if we need to switch page tables (CR3)
+        // If new_context.cr3 != 0, load it into CR3
+        "mov rax, [rsi + 0xA0]",  // Load CR3 from new context
+        "test rax, rax",           // Check if it's non-zero
+        "jz 2f",                   // Skip if zero (kernel thread)
+
+        // Switch to new page table
+        "mov cr3, rax",
+
+        "2:",  // Continue with normal context restore
+
         // Restore callee-saved registers
         "mov r15, [rsi + 0x00]",
         "mov r14, [rsi + 0x08]",
@@ -246,9 +374,11 @@ pub unsafe extern "C" fn switch_context_cooperative(_old_context: *mut ThreadCon
         // Push return address (RIP) onto the new stack
         "push qword ptr [rsi + 0x78]",
 
-        // Restore RFLAGS (with IF enabled)
+        // Restore RFLAGS (preserve interrupt state)
         "mov rax, [rsi + 0x88]",
-        "or rax, 0x200",  // Ensure interrupts are enabled
+        // NOTE: Do NOT force interrupts on! Preserve the saved IF flag state.
+        // The without_interrupts() wrapper in yield_now() needs interrupts to
+        // remain disabled until the lock is released.
         "push rax",
         "popfq",
 
@@ -391,6 +521,17 @@ pub unsafe extern "C" fn restore_context(_new_context: *const ThreadContext) -> 
     core::arch::naked_asm!(
         // rdi = new_context pointer
 
+        // Check if we need to switch page tables (CR3)
+        // If new_context.cr3 != 0, load it into CR3
+        "mov rax, [rdi + 0xA0]",  // Load CR3 from new context
+        "test rax, rax",           // Check if it's non-zero
+        "jz 2f",                   // Skip if zero (kernel thread)
+
+        // Switch to new page table
+        "mov cr3, rax",
+
+        "2:",  // Continue with normal context restore
+
         // Restore general purpose registers
         "mov r15, [rdi + 0x00]",
         "mov r14, [rdi + 0x08]",
@@ -406,13 +547,14 @@ pub unsafe extern "C" fn restore_context(_new_context: *const ThreadContext) -> 
         "mov rcx, [rdi + 0x58]",
         "mov rdx, [rdi + 0x60]",
 
-        // Switch to the new thread's stack
-        "mov rsp, [rdi + 0x90]",
+        // CRITICAL: Build IRETQ frame on KERNEL stack, NOT user stack!
+        // This avoids SMAP issues - stay on kernel stack, IRETQ switches to user stack
+        // DO NOT do "mov rsp, [rdi + 0x90]" here!
 
-        // Build interrupt frame on the new stack for IRETQ
+        // Build interrupt frame on the KERNEL stack for IRETQ
         // Push in reverse order: SS, RSP, RFLAGS, CS, RIP
-        "push qword ptr [rdi + 0x98]",  // SS
-        "push qword ptr [rdi + 0x90]",  // RSP
+        "push qword ptr [rdi + 0x98]",  // SS (user's SS from context)
+        "push qword ptr [rdi + 0x90]",  // RSP (user's RSP from context)
 
         // Push RFLAGS with IF (interrupt flag) set to enable interrupts
         "mov rax, [rdi + 0x88]",
@@ -444,6 +586,76 @@ pub extern "C" fn thread_entry_wrapper(entry_point: extern "C" fn() -> !) -> ! {
 
     // Call the actual entry point
     entry_point()
+}
+
+/// Enter user mode for the first time
+///
+/// This function uses IRETQ to transition from ring 0 to ring 3.
+/// It's used when starting a user-mode thread for the first time.
+///
+/// # Safety
+/// This function never returns - it jumps to user mode.
+/// The context must be properly initialized for user mode with:
+/// - CS = user code segment (0x20 | 3)
+/// - SS = user data segment (0x18 | 3)
+/// - CR3 = valid user page table
+/// - RIP = valid user entry point
+/// - RSP = valid user stack
+///
+/// # Arguments
+/// * `context` - Pointer to a ThreadContext initialized for user mode
+#[unsafe(naked)]
+pub unsafe extern "C" fn enter_user_mode(_context: *const ThreadContext) -> ! {
+    core::arch::naked_asm!(
+        // rdi = context pointer
+
+        // Load CR3 (page table) first
+        "mov rax, [rdi + 0xA0]",  // cr3 offset (from struct definition)
+        "mov cr3, rax",
+
+        // Set up IRETQ frame on stack:
+        // Stack layout (pushed in reverse order):
+        // [SS]      <- Top
+        // [RSP]
+        // [RFLAGS]
+        // [CS]
+        // [RIP]     <- Bottom (RSP points here after pushes)
+
+        // Push SS (user data segment)
+        "push qword ptr [rdi + 0x98]",  // ss offset
+
+        // Push RSP (user stack pointer)
+        "push qword ptr [rdi + 0x90]",  // rsp offset
+
+        // Push RFLAGS
+        "push qword ptr [rdi + 0x88]",  // rflags offset
+
+        // Push CS (user code segment)
+        "push qword ptr [rdi + 0x80]",  // cs offset
+
+        // Push RIP (user entry point)
+        "push qword ptr [rdi + 0x78]",  // rip offset
+
+        // Zero out all registers for security (don't leak kernel data)
+        "xor rax, rax",
+        "xor rbx, rbx",
+        "xor rcx, rcx",
+        "xor rdx, rdx",
+        "xor rsi, rsi",
+        "xor rdi, rdi",
+        "xor r8, r8",
+        "xor r9, r9",
+        "xor r10, r10",
+        "xor r11, r11",
+        "xor r12, r12",
+        "xor r13, r13",
+        "xor r14, r14",
+        "xor r15, r15",
+        "xor rbp, rbp",
+
+        // Enter user mode!
+        "iretq",
+    );
 }
 
 #[cfg(test)]

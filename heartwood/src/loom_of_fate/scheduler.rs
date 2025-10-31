@@ -14,9 +14,9 @@ const MAX_THREADS: usize = 1024;
 pub struct Scheduler {
     pub(crate) threads: Vec<Thread>,
     stacks: Vec<Stack>,  // Stack storage (owned by scheduler)
-    ready_queue: VecDeque<ThreadId>,
+    pub(crate) ready_queue: VecDeque<ThreadId>,
     current_thread: Option<ThreadId>,
-    next_thread_id: u64,
+    pub(crate) next_thread_id: u64,
     harmony_analyzer: HarmonyAnalyzer,
     /// Latest harmony metrics from the analyzer
     latest_metrics: HarmonyMetrics,
@@ -121,7 +121,8 @@ impl Scheduler {
         self.stacks.push(stack);
 
         // Create the thread with its stack
-        let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top);
+        // Pass None for vessel_id since current threads are kernel threads
+        let thread = Thread::new(thread_id, entry_point, priority, stack_bottom, stack_top, None);
 
         self.threads.push(thread);
         self.ready_queue.push_back(thread_id);
@@ -140,10 +141,11 @@ impl Scheduler {
     /// manipulation. It should only be called from safe contexts where
     /// the scheduler state is valid.
     /// Prepare for yielding: select next thread and get context pointers
-    /// Returns (should_switch, from_context_ptr, to_context_ptr)
+    /// Returns (should_switch, from_context_ptr, to_context_ptr, new_kernel_stack)
     /// This method is designed to be called with the lock held, then the lock
     /// can be dropped before the actual context switch.
-    pub fn prepare_yield(&mut self) -> (bool, *mut ThreadContext, *const ThreadContext) {
+    /// new_kernel_stack is Some(addr) if we need to update TSS.rsp[0]
+    pub fn prepare_yield(&mut self) -> (bool, *mut ThreadContext, *const ThreadContext, Option<u64>) {
 
         // Analyze harmony before scheduling
         let metrics = self.harmony_analyzer.analyze(&mut self.threads);
@@ -161,23 +163,74 @@ impl Scheduler {
         if next_thread_id.is_none() {
             // No threads ready - this shouldn't happen in a well-designed system
             // but if it does, we just return (stay on current thread if any)
-            return (false, core::ptr::null_mut(), core::ptr::null());
+            return (false, core::ptr::null_mut(), core::ptr::null(), None);
         }
 
-        let next_id = next_thread_id.unwrap();
+        // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting,
+        // which might try to lock LOOM again, causing deadlock.
+        let next_id = match next_thread_id {
+            Some(id) => id,
+            None => {
+                // This should never happen due to check above, but handle gracefully
+                unsafe {
+                    let msg = b"\n[FATAL] next_thread_id unwrap failed in prepare_yield!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
 
         // If we're switching to a different thread, prepare for context switch
         if self.current_thread.is_some() && self.current_thread != Some(next_id) {
-            let current_id = self.current_thread.unwrap();
+            // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting.
+            let current_id = match self.current_thread {
+                Some(id) => id,
+                None => {
+                    // This should never happen due to check above, but handle gracefully
+                    unsafe {
+                        let msg = b"\n[FATAL] current_thread unwrap failed in prepare_yield!\n";
+                        for &byte in msg.iter() {
+                            core::arch::asm!(
+                                "out dx, al",
+                                in("dx") 0x3f8u16,
+                                in("al") byte,
+                                options(nomem, nostack, preserves_flags)
+                            );
+                        }
+                        loop {
+                            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                        }
+                    }
+                }
+            };
 
             // Update current thread state
-            if let Some(current_thread) = self.find_thread_mut(current_id) {
+            let should_requeue = if let Some(current_thread) = self.find_thread_mut(current_id) {
                 current_thread.record_yield();
-                current_thread.set_state(ThreadState::Resting);
-            }
 
-            // Add current thread back to ready queue
-            self.ready_queue.push_back(current_id);
+                // Only requeue if not Fading
+                let is_fading = current_thread.state() == ThreadState::Fading;
+                if !is_fading {
+                    current_thread.set_state(ThreadState::Resting);
+                }
+                !is_fading
+            } else {
+                false
+            };
+
+            // Add current thread back to ready queue (unless it's Fading)
+            if should_requeue {
+                self.ready_queue.push_back(current_id);
+            }
 
             // Update next thread state
             if let Some(next_thread) = self.find_thread_mut(next_id) {
@@ -187,8 +240,46 @@ impl Scheduler {
             }
 
             // Get raw pointers to the contexts
-            let from_idx = self.threads.iter().position(|t| t.id() == current_id).unwrap();
-            let to_idx = self.threads.iter().position(|t| t.id() == next_id).unwrap();
+            // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting.
+            let from_idx = match self.threads.iter().position(|t| t.id() == current_id) {
+                Some(idx) => idx,
+                None => {
+                    unsafe {
+                        let msg = b"\n[FATAL] Cannot find current thread in threads vec!\n";
+                        for &byte in msg.iter() {
+                            core::arch::asm!(
+                                "out dx, al",
+                                in("dx") 0x3f8u16,
+                                in("al") byte,
+                                options(nomem, nostack, preserves_flags)
+                            );
+                        }
+                        loop {
+                            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                        }
+                    }
+                }
+            };
+
+            let to_idx = match self.threads.iter().position(|t| t.id() == next_id) {
+                Some(idx) => idx,
+                None => {
+                    unsafe {
+                        let msg = b"\n[FATAL] Cannot find next thread in threads vec!\n";
+                        for &byte in msg.iter() {
+                            core::arch::asm!(
+                                "out dx, al",
+                                in("dx") 0x3f8u16,
+                                in("al") byte,
+                                options(nomem, nostack, preserves_flags)
+                            );
+                        }
+                        loop {
+                            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                        }
+                    }
+                }
+            };
 
             let from_ctx_ptr = &mut self.threads[from_idx].context as *mut ThreadContext;
             let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
@@ -205,10 +296,20 @@ impl Scheduler {
             self.current_thread = Some(next_id);
             self.context_switches += 1;
 
-            (true, from_ctx_ptr, to_ctx_ptr)
+            // Check if we need to update TSS.rsp[0]
+            let new_kernel_stack = if let Some(vessel_id) = self.threads[to_idx].vessel_id() {
+                // This is a user-mode thread - get its vessel's kernel stack
+                use crate::loom_of_fate::get_harbor;
+                let harbor = get_harbor().lock();
+                harbor.find_vessel(vessel_id).map(|v| v.kernel_stack())
+            } else {
+                None
+            };
+
+            (true, from_ctx_ptr, to_ctx_ptr, new_kernel_stack)
         } else {
             // Same thread or no current thread - don't switch
-            (false, core::ptr::null_mut(), core::ptr::null())
+            (false, core::ptr::null_mut(), core::ptr::null(), None)
         }
     }
 
@@ -228,8 +329,46 @@ impl Scheduler {
     #[allow(dead_code)]
     fn perform_context_switch(&mut self, from_id: ThreadId, to_id: ThreadId) {
         // Get raw pointers to the contexts before borrowing
-        let from_idx = self.threads.iter().position(|t| t.id() == from_id).unwrap();
-        let to_idx = self.threads.iter().position(|t| t.id() == to_id).unwrap();
+        // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting.
+        let from_idx = match self.threads.iter().position(|t| t.id() == from_id) {
+            Some(idx) => idx,
+            None => {
+                unsafe {
+                    let msg = b"\n[FATAL] Cannot find from_id in perform_context_switch!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
+
+        let to_idx = match self.threads.iter().position(|t| t.id() == to_id) {
+            Some(idx) => idx,
+            None => {
+                unsafe {
+                    let msg = b"\n[FATAL] Cannot find to_id in perform_context_switch!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
 
         let from_ctx_ptr = &mut self.threads[from_idx].context as *mut ThreadContext;
         let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
@@ -259,7 +398,26 @@ impl Scheduler {
     #[allow(dead_code)]
     fn restore_first_thread(&mut self, to_id: ThreadId) -> ! {
         // Find the thread's context
-        let to_idx = self.threads.iter().position(|t| t.id() == to_id).unwrap();
+        // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting.
+        let to_idx = match self.threads.iter().position(|t| t.id() == to_id) {
+            Some(idx) => idx,
+            None => {
+                unsafe {
+                    let msg = b"\n[FATAL] Cannot find to_id in restore_first_thread!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
         let entry_point = self.threads[to_idx].entry_point;
         let stack_top = self.threads[to_idx].stack_top;
 
@@ -302,8 +460,20 @@ impl Scheduler {
 
     /// Select the next thread to run - simple round-robin
     fn select_next_thread(&mut self) -> Option<ThreadId> {
-        // Just pop the front of the queue - simple round-robin
-        self.ready_queue.pop_front()
+        // Pop from the front of the queue, skipping any Fading threads
+        // (defensive programming - Fading threads should not be in the queue)
+        loop {
+            let next_id = self.ready_queue.pop_front()?;
+
+            // Check if thread is still valid and not Fading
+            if let Some(thread) = self.find_thread(next_id) {
+                if thread.state() != ThreadState::Fading {
+                    return Some(next_id);
+                }
+                // Thread is Fading, skip it and try next one
+            }
+            // If thread not found, skip it and try next one
+        }
     }
 
     /// Find a thread by ID
@@ -383,8 +553,26 @@ impl Scheduler {
     /// This function never returns - it performs a one-way jump to the first thread
     pub fn start_weaving(&mut self) -> ! {
         // Select the first thread to run (highest priority thread from ready queue)
-        let next_id = self.select_next_thread()
-            .expect("Cannot start weaving - no threads in ready queue!");
+        // CRITICAL: Do NOT use .expect() here! It can panic with formatting.
+        let next_id = match self.select_next_thread() {
+            Some(id) => id,
+            None => {
+                unsafe {
+                    let msg = b"\n[FATAL] Cannot start weaving - no threads in ready queue!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
 
         // Mark this thread as currently running
         self.current_thread = Some(next_id);
@@ -399,7 +587,26 @@ impl Scheduler {
         self.context_switches += 1;
 
         // Get the thread's context
-        let thread_idx = self.threads.iter().position(|t| t.id() == next_id).unwrap();
+        // CRITICAL: Do NOT use .unwrap() here! It can panic with formatting.
+        let thread_idx = match self.threads.iter().position(|t| t.id() == next_id) {
+            Some(idx) => idx,
+            None => {
+                unsafe {
+                    let msg = b"\n[FATAL] Cannot find thread in start_weaving!\n";
+                    for &byte in msg.iter() {
+                        core::arch::asm!(
+                            "out dx, al",
+                            in("dx") 0x3f8u16,
+                            in("al") byte,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
         let context_ptr = &self.threads[thread_idx].context as *const ThreadContext;
 
         // Perform the sacred one-way context switch to the first thread

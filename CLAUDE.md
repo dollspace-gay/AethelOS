@@ -98,23 +98,16 @@ GIT WORKFLOW (AUTO-SYNC)
 **From project root:**
 
 ```bash
-# 1. Build the kernel
-cd heartwood
-cargo build --target x86_64-aethelos.json 2>&1 | grep -E "(Compiling|Finished|error)"
+# 1. Build the kernel and ISO
 
-# 2. Create bootable ISO (requires WSL/Linux with GRUB)
-cd ..
-wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir"
+cd /f/OS/user_programs/hello && cargo build --release --target x86_64-unknown-none 2>&1 | grep -E "(Compiling|Finished|error)"
+cd /f/OS && cargo build 2>&1 | grep -E "(Compiling heartwood|Finished|error)" && wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir 2>&1 | grep -E '(success|Writing)'"
 
-# 3. Run in QEMU
+
+# 2. Run in QEMU
 Do not attempt to run in QEMU yourself. Pass the turn to the human after a build and alert them to run it for you and inform you of the results.
 
-**Quick rebuild workflow (one-liner with error checking):**
-```bash
-cd heartwood && cargo build --target x86_64-aethelos.json 2>&1 | grep -E "(Finished|error)" && cd .. && wsl bash -c "cp target/x86_64-aethelos/debug/heartwood isodir/boot/aethelos/heartwood.bin && grub-mkrescue -o aethelos.iso isodir 2>&1 | grep success"
-```
 
-**Note:** This filters output to show only build status and ISO creation success, making it faster to spot issues.
 
 ### Prerequisites
 
@@ -122,7 +115,6 @@ cd heartwood && cargo build --target x86_64-aethelos.json 2>&1 | grep -E "(Finis
   - Components: `rust-src`, `llvm-tools-preview`
 - **GRUB:** `grub-mkrescue` (via WSL on Windows, native on Linux)
 - **QEMU:** `qemu-system-x86_64` for testing
-- **Target:** Custom `x86_64-aethelos.json` target spec
 
 ---
 

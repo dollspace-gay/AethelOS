@@ -1,84 +1,96 @@
-/* The Unbreakable Binding - Ultimate Linker Script for AethelOS */
+/* The Unbreakable Binding - Higher-Half Linker Script for AethelOS */
+/* Physical load at 1MB, virtual execution in top 2GB */
+/* Pattern based on Linux kernel vmlinux.lds.S */
+/* Uses PIC relocation model for RIP-relative addressing in higher-half */
 ENTRY(boot32_start)
+
+/* Force linker to keep _start symbol (Rust kernel entry point) */
+EXTERN(_start)
+
+/* Higher-half kernel virtual base address - top 2GB of address space */
+KERNEL_VMA = 0xFFFFFFFF80000000;
 
 PHDRS
 {
-    text PT_LOAD FLAGS(7);  /* 7 = Read + Write + Execute */
+    boot PT_LOAD FLAGS(7);   /* Boot code at low addresses */
+    kernel PT_LOAD FLAGS(7); /* All kernel sections at higher-half */
 }
 
 SECTIONS
 {
-    /* Start at 1 MiB - standard for multiboot kernels */
+    /* Boot sections at LOW addresses (identity-mapped before paging) */
     . = 1M;
 
-    /* Multiboot2 header MUST be at file offset 0 for GRUB to find it */
-    /* VMA = 1M (where it runs), LMA = 0x100000 (where GRUB loads it) */
     .boot ALIGN(8) : AT(1M)
     {
         KEEP(*(.multiboot))
         KEEP(*(.boot))
-    } :text
+    } :boot
 
-    /* 32-bit bootstrap code immediately follows */
     .boot.text ALIGN(4) : AT(1M + SIZEOF(.boot))
     {
         *(.boot.text)
-    } :text
+    } :boot
 
-    /* Main executable code */
-    .text ALIGN(4K) : AT(ADDR(.text))
+    /* Track where boot sections end physically */
+    __boot_phys_end = 1M + SIZEOF(.boot) + SIZEOF(.boot.text);
+
+    /* Switch to higher-half virtual addresses */
+    /* Use Linux kernel pattern: VMA at high address, LMA continues after boot */
+    . = KERNEL_VMA + __boot_phys_end;
+
+    /* Main kernel sections - VMA in higher half, LMA continues from boot */
+    /* All kernel sections go in one segment to avoid overlaps */
+    .text ALIGN(4K) : AT(ADDR(.text) - KERNEL_VMA)
     {
         *(.text .text.*)
-    } :text
+    } :kernel
 
-    /* Read-only data */
-    .rodata ALIGN(4K) : AT(ADDR(.rodata))
+    .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_VMA)
     {
         *(.rodata .rodata.*)
-    } :text
+        *(.lrodata .lrodata.*)  /* Medium/large code model rodata */
+    } :kernel
 
-    /* The Rune of Permanence - Structures that become read-only after boot */
-    .rune ALIGN(4K) : AT(ADDR(.rune))
+    .rune ALIGN(4K) : AT(ADDR(.rune) - KERNEL_VMA)
     {
         PROVIDE(__rune_start = .);
         *(.rune .rune.*)
         PROVIDE(__rune_end = .);
-    } :text
+    } :kernel
 
-    /* Initialized data */
-    .data ALIGN(4K) : AT(ADDR(.data))
+    .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_VMA)
     {
         *(.data .data.*)
-    } :text
+    } :kernel
 
-    /* Uninitialized data */
-    .bss ALIGN(4K) : AT(ADDR(.bss))
+    .bss ALIGN(4K) : AT(ADDR(.bss) - KERNEL_VMA)
     {
+        PROVIDE(__bss_start = .);
         *(.bss .bss.*)
         *(COMMON)
-    } :text
+        PROVIDE(__bss_end = .);
+    } :kernel
 
-    /* Thread-local storage */
-    .tdata ALIGN(4K) : AT(ADDR(.tdata))
+    .tdata ALIGN(4K) : AT(ADDR(.tdata) - KERNEL_VMA)
     {
         *(.tdata .tdata.*)
-    } :text
+    } :kernel
 
-    .tbss ALIGN(4K) : AT(ADDR(.tbss))
+    .tbss ALIGN(4K) : AT(ADDR(.tbss) - KERNEL_VMA)
     {
         *(.tbss .tbss.*)
-    } :text
+    } :kernel
 
-    /* Exception handling frame - needed but can be at end */
-    .eh_frame_hdr ALIGN(4) : AT(ADDR(.eh_frame_hdr))
+    .eh_frame_hdr ALIGN(4) : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA)
     {
         *(.eh_frame_hdr)
-    } :text
+    } :kernel
 
-    .eh_frame ALIGN(4) : AT(ADDR(.eh_frame))
+    .eh_frame ALIGN(4) : AT(ADDR(.eh_frame) - KERNEL_VMA)
     {
         *(.eh_frame)
-    } :text
+    } :kernel
 
     /* Discard sections we don't need */
     /DISCARD/ :

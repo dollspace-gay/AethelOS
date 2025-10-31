@@ -223,13 +223,29 @@ impl BuddyAllocator {
 
             // Verify heap canaries before deallocation (using aligned_size)
             if !super::heap_canaries::verify_canaries(blk_addr, aligned_size) {
-                panic!("◈ HEAP CORRUPTION: Canary violation detected during deallocation!\n\
-                       \n\
-                       Address: 0x{:016x}\n\
-                       Size: {} bytes (aligned: {})\n\
-                       \n\
-                       The Weaver's Sigil has detected heap buffer overflow.\n\
-                       This allocation's protective canaries were corrupted.", addr, size, aligned_size);
+                // CRITICAL: Cannot use panic! here because panic formatting allocates,
+                // and we're inside the allocator (would cause reentrant deadlock).
+                // Use direct serial output and halt instead.
+                unsafe {
+                    // Simple markers instead of complex string iteration
+                    // (Iterator loops hang in higher-half with -mcmodel=kernel)
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x3f8u16,
+                        in("al") b'!',  // '!' = FATAL ERROR
+                        options(nomem, nostack, preserves_flags)
+                    );
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x3f8u16,
+                        in("al") b'C',  // 'C' = Canary violation
+                        options(nomem, nostack, preserves_flags)
+                    );
+                    // Halt the CPU
+                    loop {
+                        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                    }
+                }
             }
 
             // Calculate total size including canaries
@@ -449,7 +465,7 @@ pub struct LockedBuddyAllocator {
 impl LockedBuddyAllocator {
     pub const fn new() -> Self {
         Self {
-            inner: InterruptSafeLock::new(BuddyAllocator::new()),
+            inner: InterruptSafeLock::new(BuddyAllocator::new(), "ALLOCATOR"),
         }
     }
 
@@ -463,6 +479,17 @@ impl LockedBuddyAllocator {
 
     /// Allocate memory
     pub fn allocate(&self, size: usize) -> Option<usize> {
+        // Simple marker instead of complex debug output
+        // (Complex formatting with stack arrays and iterators hangs in higher-half)
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") b'A',  // 'A' = Allocation attempt
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+
         self.inner.lock().allocate(size)
     }
 

@@ -39,10 +39,50 @@ pub extern "C" fn _start() -> ! {
     // Write '1' to serial to prove _start() was called
     unsafe { serial_out(b'1'); }
 
-    // Ultra-early debug: write directly to VGA buffer BEFORE any initialization
-    // VGA text buffer is at 0xB8000
+    // CRITICAL: Zero the .bss section
+    // After higher-half migration, GRUB doesn't zero .bss at virtual addresses,
+    // so all static variables contain garbage! This causes locks to spin forever.
     unsafe {
-        let vga = 0xb8000 as *mut u16;
+        extern "C" {
+            static mut __bss_start: u8;
+            static mut __bss_end: u8;
+        }
+
+        let bss_start = &mut __bss_start as *mut u8;
+        let bss_end = &mut __bss_end as *mut u8;
+        let bss_size = bss_end as usize - bss_start as usize;
+
+        // DEBUG: Output BSS size to verify it's non-zero
+        serial_out(b'[');
+        if bss_size == 0 {
+            serial_out(b'0');
+        } else if bss_size > 0 {
+            serial_out(b'+');
+        }
+        serial_out(b']');
+
+        // Zero the BSS manually with a simple loop instead of write_bytes
+        // (write_bytes might be optimized out or broken in higher-half)
+        let mut i = 0usize;
+        while i < bss_size {
+            *bss_start.add(i) = 0;
+            i += 1;
+
+            // Progress marker every 10KB
+            if i % 10240 == 0 {
+                serial_out(b'.');
+            }
+        }
+
+        serial_out(b'Z'); // BSS zeroed
+    }
+
+    // Ultra-early debug: write directly to VGA buffer BEFORE any initialization
+    // After higher-half kernel migration, physical VGA buffer at 0xB8000 is
+    // mapped to virtual address 0xFFFFFFFF800B8000 (top 2GB)
+    unsafe {
+        // Use the VGA buffer address constant from vga_buffer module (single source of truth)
+        let vga = heartwood::vga_buffer::VGA_BUFFER_ADDRESS as *mut u16;
         // Write 'AETHEL' in white on black (0x0F = white, 0x00 = black)
         *vga.offset(0) = 0x0F41; // 'A'
         *vga.offset(1) = 0x0F45; // 'E'
@@ -193,6 +233,60 @@ fn detect_and_mount_storage() {
     }
 }
 
+/// Remove identity mapping after boot
+///
+/// We need identity mapping during boot to execute low-address code,
+/// but once we're running at higher-half addresses, we should remove
+/// it to free PML4[0] for user space.
+///
+/// # Safety
+/// This must be called AFTER:
+/// - Boot code has finished executing
+/// - Stack has been switched to higher-half address
+/// - Global allocator has been initialized with higher-half addresses
+///
+/// After this function, accessing low addresses (0x0-0x3FFFFFFF) will
+/// cause a page fault, which is intentional.
+unsafe fn remove_identity_mapping() {
+    use core::arch::asm;
+
+    // Get current PML4 physical address from CR3
+    let pml4_phys: u64;
+    asm!("mov {}, cr3", out(reg) pml4_phys, options(nomem, nostack));
+
+    // Convert to virtual address using identity mapping (still active)
+    // Bootloader identity-maps first 1GB, so physical address = virtual address
+    let pml4 = &mut *(pml4_phys as *mut mana_pool::page_tables::PageTable);
+
+    // Clear PML4[0] to remove identity mapping
+    // This frees virtual addresses 0x0-0x7FFF_FFFF_FFFF for user space
+    pml4.entry_mut(0).set_raw(0);
+
+    // CRITICAL: Set up recursive page table mapping at PML4[510]
+    // This allows page table structures to be accessed after CR3 switch
+    // PML4[510] points to the PML4 itself (recursive mapping)
+    serial_out(b'[');
+    serial_out(b'R');
+    serial_out(b'E');
+    serial_out(b'C');
+    serial_out(b']');
+
+    use mana_pool::page_tables::PageFlag;
+    pml4.entry_mut(510).set_raw(pml4_phys |
+        (PageFlag::Present as u64) |
+        (PageFlag::ReadWrite as u64));
+
+    serial_out(b'5'); // PML4[510] = recursive
+    serial_out(b'1');
+    serial_out(b'0');
+
+    // Flush entire TLB to ensure changes take effect immediately
+    asm!("mov cr3, {}", in(reg) pml4_phys, options(nostack));
+
+    // Simple marker instead of serial_println to avoid formatting issues
+    serial_out(b'R'); // Identity mapping Removed
+}
+
 /// Initialize the Heartwood's core systems
 fn heartwood_init() {
     unsafe { serial_out(b'A'); } // Before init sequence
@@ -208,14 +302,47 @@ fn heartwood_init() {
         drivers::serial::write_str("AethelOS serial port initialized\n");
     }
 
-    // Display boot banner
     heartwood::vga_buffer::print_banner();
+    unsafe { serial_out(b'*'); } // DEBUG: After banner returns
+
+    // TEST: Try calling write_str directly (bypass write_fmt)
+    unsafe { serial_out(b'D'); } // Before direct write_str
+    unsafe {
+        heartwood::vga_buffer::test_write_str();
+    }
+    unsafe { serial_out(b'd'); } // After direct write_str
+
+    // TEST: Try simple ASCII println first
+    unsafe { serial_out(b'T'); } // Before test println
+    println!("TEST");
+    unsafe { serial_out(b't'); } // After test println
+
     println!("◈ Initializing Heartwood subsystems...");
+    unsafe { serial_out(b'P'); }
 
     // Initialize the global allocator FIRST (before any heap allocations!)
     println!("◈ Initializing global allocator...");
+    unsafe { serial_out(b'G'); } // Before allocator init
     heartwood::init_global_allocator();
+    unsafe { serial_out(b'g'); } // After allocator init
     println!("  ✓ Buddy allocator ready (4MB heap)");
+
+    // Ensure kernel memory is writable (fix multiboot2 read-only mappings)
+    // CRITICAL: Must be called BEFORE removing identity mapping!
+    // This function needs identity mapping active to access page table physical addresses.
+    println!("◈ Remapping kernel memory as writable...");
+    unsafe {
+        mana_pool::ensure_kernel_memory_writable();
+    }
+    println!("  ✓ Kernel memory permissions corrected");
+
+    // Remove identity mapping now that we're fully in higher-half
+    // This frees PML4[0] for user-space programs
+    println!("◈ Removing identity mapping...");
+    unsafe {
+        remove_identity_mapping();
+    }
+    println!("  ✓ Kernel now higher-half only (PML4[256-511])");
 
     // Initialize the Mana Pool (memory management)
     println!("◈ Awakening Mana Pool...");
@@ -274,22 +401,67 @@ fn heartwood_init() {
     // Initialize the Attunement Layer (this includes IDT initialization)
     // IMPORTANT: Must happen before sealing, as IDT is in .rune section
     println!("◈ Attuning to hardware...");
+    unsafe {
+        for &byte in b"[DEBUG] Before attunement::init()\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     attunement::init();
+    unsafe {
+        for &byte in b"[DEBUG] After attunement::init() returned\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     println!("  ✓ Attunement complete");
+    unsafe {
+        for &byte in b"[DEBUG] After Attunement complete println\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
 
     // Initialize security policy (must be before sealing)
+    unsafe {
+        for &byte in b"[DEBUG] Before security policy init\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     println!("◈ Scribing security policy...");
     mana_pool::security_policy::init();
     println!("  ✓ Security policy configured");
     mana_pool::security_policy::display_policy();
+    unsafe {
+        for &byte in b"[DEBUG] After security policy display\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
 
     // Initialize the Eldarin Shell
+    unsafe {
+        for &byte in b"[DEBUG] Before eldarin::init()\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     println!("◈ Awakening the Eldarin Shell...");
     heartwood::eldarin::init();
+    unsafe {
+        for &byte in b"[DEBUG] After eldarin::init() returned\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     println!("  ✓ Shell ready");
+    unsafe {
+        for &byte in b"[DEBUG] After Shell ready println\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
 
     // Detect ATA drives and mount filesystem (BEFORE sealing to avoid issues)
     println!("◈ Detecting storage devices...");
+    unsafe {
+        for &byte in b"[DEBUG] About to detect storage\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     detect_and_mount_storage();
     println!();
 

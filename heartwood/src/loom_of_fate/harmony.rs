@@ -1,12 +1,17 @@
 //! Harmony analysis - Detecting and soothing parasitic behavior
 
 use super::thread::{Thread, ThreadState};
-use alloc::vec::Vec;
+
+/// Number of historical metrics to keep (fixed-size ring buffer)
+const HARMONY_HISTORY_SIZE: usize = 100;
 
 /// Analyzes system harmony and detects parasitic threads
 pub struct HarmonyAnalyzer {
-    /// Historical metrics for trend analysis
-    history: Vec<HarmonyMetrics>,
+    /// Historical metrics for trend analysis (Fixed-size ring buffer - NO ALLOCATION)
+    /// This is critical: we CANNOT allocate in interrupt context!
+    history: [HarmonyMetrics; HARMONY_HISTORY_SIZE],
+    history_index: usize,
+    history_count: usize,
 }
 
 impl Default for HarmonyAnalyzer {
@@ -18,7 +23,9 @@ impl Default for HarmonyAnalyzer {
 impl HarmonyAnalyzer {
     pub fn new() -> Self {
         Self {
-            history: Vec::new(),
+            history: [HarmonyMetrics::default(); HARMONY_HISTORY_SIZE],
+            history_index: 0,
+            history_count: 0,
         }
     }
 
@@ -52,12 +59,15 @@ impl HarmonyAnalyzer {
             system_harmony: self.calculate_system_harmony(avg_harmony, active_threads / total_threads),
         };
 
-        self.history.push(metrics);
-
-        // Keep only recent history
-        if self.history.len() > 100 {
-            self.history.remove(0);
+        // --- CRITICAL FIX: NO ALLOCATION IN INTERRUPT CONTEXT ---
+        // Use fixed-size ring buffer instead of Vec::push() which can allocate
+        // This prevents deadlock when timer interrupt fires during disk I/O allocation
+        self.history[self.history_index] = metrics;
+        self.history_index = (self.history_index + 1) % HARMONY_HISTORY_SIZE;
+        if self.history_count < HARMONY_HISTORY_SIZE {
+            self.history_count += 1;
         }
+        // --- END CRITICAL FIX ---
 
         metrics
     }

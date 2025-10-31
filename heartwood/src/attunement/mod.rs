@@ -12,6 +12,10 @@ pub mod timer;
 pub mod ward_of_sacred_boundaries;
 pub mod ward_of_unseen_paths;
 pub mod ward_of_anonymity;
+pub mod per_cpu;
+
+// Export TSS kernel stack update function for context switching
+pub use gdt::set_kernel_stack;
 
 use pic8259::ChainedPics;
 use crate::mana_pool::InterruptSafeLock;
@@ -25,7 +29,7 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 /// This is THE source of truth for PIC management
 /// CRITICAL: Must be interrupt-safe since accessed from interrupt handlers for EOI
 pub static PICS: InterruptSafeLock<ChainedPics> =
-    InterruptSafeLock::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+    InterruptSafeLock::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) }, "PICS");
 
 /// Initialize the Attunement Layer
 /// This follows The Grand Unification sequence
@@ -62,22 +66,83 @@ pub fn init() {
         crate::println!("  ⟡ Quest 1: Establishing privilege boundaries (GDT & TSS)...");
         gdt::init();
 
+        // Quest 1.5: Initialize per-CPU data structures (GS register)
+        crate::println!("  ⟡ Quest 1.5: Weaving per-CPU consciousness (GS register)...");
+        per_cpu::init_bsp();
+        crate::println!("     ✓ The CPU's consciousness is self-aware");
+
+        // Quest 1.6: Initialize syscall/sysret mechanism
+        crate::println!("  ⟡ Quest 1.6: Opening the Gates of Invocation (syscall/sysret)...");
+        crate::loom_of_fate::syscalls::init_syscall();
+        crate::println!("     ✓ User space can now petition the kernel");
+
         // Quest 2: Tame the Guardian (Remap PICs to 32-47)
         crate::println!("  ⟡ Quest 2: Taming the Guardian (PIC remapping)...");
+        // DEBUG: Direct serial output to bypass any println issues
+        unsafe {
+            for &byte in b"[DEBUG] Before PICS.lock()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
         PICS.lock().initialize();
+        unsafe {
+            for &byte in b"[DEBUG] After PICS.initialize()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
 
         // Quest 3: Scribe the Laws (Setup IDT)
         crate::println!("  ⟡ Quest 3: Scribing the Laws of Reaction (IDT)...");
+        unsafe {
+            for &byte in b"[DEBUG] Before idt::init()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
         idt::init();
+        unsafe {
+            for &byte in b"[DEBUG] After idt::init()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
 
         // Quest 4: Initialize keyboard state (no PS/2 commands, trust BIOS)
         crate::println!("  ⟡ Quest 4: Preparing keyboard state...");
+        unsafe {
+            for &byte in b"[DEBUG] Before keyboard::init()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
         keyboard::init();
+        unsafe {
+            for &byte in b"[DEBUG] After keyboard::init()\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
 
         // Final Step: Open the gates (enable interrupts)
         crate::println!("  ⟡ Opening the gates to the outside world...");
+        unsafe {
+            for &byte in b"[DEBUG] Before sti\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
         core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+        unsafe {
+            for &byte in b"[DEBUG] After sti - interrupts enabled\n".iter() {
+                core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+            }
+        }
     }
 
+    unsafe {
+        for &byte in b"[DEBUG] About to print Chain of Listening\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
     crate::println!("  ✓ The Chain of Listening has been forged!");
+    unsafe {
+        for &byte in b"[DEBUG] After Chain of Listening println\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+    }
 }

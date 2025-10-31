@@ -10,12 +10,13 @@ global_asm!(
     .section .boot.text, "awx"
     .code32
     .globl boot32_start
+    .extern _start
 
     boot32_start:
         # Set up stack FIRST - use a large stack well above kernel
-        # Kernel is at 1MB (0x100000), stack grows down from 2MB (0x200000)
-        # This gives us ~1MB of stack space
-        mov esp, 0x200000
+        # Kernel is at 1MB (0x100000), stack grows down from 4MB (0x400000)
+        # This gives us ~3MB of stack space (needed for extensive debug output)
+        mov esp, 0x400000
         mov ebp, esp
 
         # Write 'B' to serial port to prove we're executing
@@ -26,28 +27,54 @@ global_asm!(
         # Disable interrupts for the rest of bootstrap
         cli
 
-        # Set up page tables for identity mapping (first 1GB using 2MB pages)
-        # Clear the page table area (16KB from 0x70000-0x73FFF)
+        # Set up page tables for BOTH identity and higher-half mapping
+        # We need dual mapping:
+        #   - Identity (PML4[0]): For boot code and early execution
+        #   - Higher-half (PML4[256]): For kernel at 0xFFFF_8000_0000_0000+
+        #
+        # Clear the page table area (24KB from 0x70000-0x75FFF)
         mov edi, 0x70000
-        mov ecx, 0x1000   # 4096 dwords = 16KB
+        mov ecx, 0x1800   # 6144 dwords = 24KB
         xor eax, eax
         rep stosd
 
-        # PML4[0] -> PDPT at 0x71000
-        mov dword ptr [0x70000], 0x71003  # Present + Write
+        # PML4 setup (at 0x70000):
+        # - Entry [0] -> PDPT at 0x71000 (identity mapping)
+        # - Entry [511] -> PDPT at 0x73000 (higher-half mapping in top 2GB)
+        mov dword ptr [0x70000], 0x71003      # PML4[0] -> PDPT (identity)
+        mov dword ptr [0x70FF8], 0x73003      # PML4[511] -> PDPT (higher-half)
+                                               # 0x70FF8 = 0x70000 + (511 * 8)
 
-        # PDPT[0] -> PD at 0x72000 (maps first 1GB)
-        mov dword ptr [0x71000], 0x72003  # Present + Write
+        # PDPT for identity mapping (at 0x71000):
+        # - Entry [0] -> PD at 0x72000 (maps first 1GB at virtual 0x0+)
+        mov dword ptr [0x71000], 0x72003      # PDPT[0] -> PD
 
-        # Map first 512 entries in PD (512 * 2MB = 1GB)
+        # PDPT for higher-half mapping (at 0x73000):
+        # - Entry [510] -> PD at 0x74000 (maps first 1GB at virtual 0xFFFFFFFF80000000+)
+        # PDPT[510] is at offset 510*8 = 0xFF0 from base 0x73000
+        mov dword ptr [0x73FF0], 0x74003      # PDPT[510] -> PD
+
+        # PD for identity mapping (at 0x72000):
+        # Map 512 * 2MB huge pages = 1GB starting at physical 0x0
         mov edi, 0x72000
-        mov eax, 0x83       # Present + Write + Huge (2MB), starting at 0
+        mov eax, 0x83       # Present + Write + Huge (2MB)
         mov ecx, 512        # 512 entries
     1:
         mov [edi], eax
         add eax, 0x200000   # Next 2MB page
         add edi, 8
         loop 1b
+
+        # PD for higher-half mapping (at 0x74000):
+        # Map SAME physical memory (512 * 2MB = 1GB) but at higher-half virtual address
+        mov edi, 0x74000
+        mov eax, 0x83       # Present + Write + Huge (2MB)
+        mov ecx, 512        # 512 entries
+    2:
+        mov [edi], eax
+        add eax, 0x200000   # Next 2MB page
+        add edi, 8
+        loop 2b
 
         # Load CR3 with PML4 address
         mov eax, 0x70000
@@ -58,10 +85,11 @@ global_asm!(
         or eax, (1 << 5)    # CR4.PAE = 1
         mov cr4, eax
 
-        # Set Long Mode bit in EFER MSR
+        # Set Long Mode and NX bits in EFER MSR
         mov ecx, 0xC0000080 # EFER MSR
         rdmsr
         or eax, (1 << 8)    # EFER.LME = 1 (Long Mode Enable)
+        or eax, (1 << 11)   # EFER.NXE = 1 (No Execute Enable - required for W^X security)
         wrmsr
 
         # Enable paging to activate long mode
@@ -130,8 +158,9 @@ global_asm!(
         mov word ptr [rax], 0x1F4F      # 'O' in white on blue
         mov word ptr [rax + 2], 0x1F4B  # 'K' in white on blue
 
-        # Set up a proper stack before calling Rust (same 2MB location)
-        mov rsp, 0x200000
+        # Set up HIGHER-HALF stack before calling Rust
+        # Physical 4MB = Virtual 0xFFFFFFFF80400000 in top 2GB
+        movabs rsp, 0xFFFFFFFF80400000
         mov rbp, rsp
 
         # Write 'S' to serial after stack setup
@@ -144,8 +173,14 @@ global_asm!(
         mov al, 82        # 'R'
         out dx, al
 
-        # Call the Rust kernel entry point
-        call _start
+        # Jump to Rust _start function in higher-half kernel
+        # Use RIP-relative addressing to get _start address
+        lea rax, [rip + _start_addr_rip]
+        mov rax, [rax]
+        jmp rax
+
+_start_addr_rip:
+        .quad _start
 
         # Write 'X' to serial if _start returns (it shouldn't)
         mov dx, 0x3f8

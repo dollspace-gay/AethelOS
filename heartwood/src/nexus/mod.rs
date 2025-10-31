@@ -49,7 +49,7 @@ pub fn init() {
 
         // Create interrupt-safe lock and write to static
         serial_out(b's'); // Before InterruptSafeLock::new
-        let lock = InterruptSafeLock::new(nexus_core);
+        let lock = InterruptSafeLock::new(nexus_core, "NEXUS");
         serial_out(b'u'); // After InterruptSafeLock::new
 
         core::ptr::write(core::ptr::addr_of_mut!(NEXUS).cast(), lock);

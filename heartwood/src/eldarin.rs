@@ -202,15 +202,54 @@ pub(crate) static mut PAGING_COMMAND: Option<PagingCommand> = None;
 /// Initialize the shell
 pub fn init() {
     unsafe {
+        // DEBUG: Direct serial output
+        for &byte in b"[ELDARIN] Starting init\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
         let buffer = CommandBuffer::new();
-        let lock = InterruptSafeLock::new(buffer);
+        for &byte in b"[ELDARIN] Buffer created\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
+        let lock = InterruptSafeLock::new(buffer, "ELDARIN_CMD");
+        for &byte in b"[ELDARIN] Lock created\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
         core::ptr::write(core::ptr::addr_of_mut!(COMMAND_BUFFER).cast(), lock);
+        for &byte in b"[ELDARIN] Buffer written\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
         BUFFER_INITIALIZED = true;
+        for &byte in b"[ELDARIN] Buffer initialized flag set\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
 
         let history = CommandHistory::new();
-        let history_lock = InterruptSafeLock::new(history);
+        for &byte in b"[ELDARIN] History created\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
+        let history_lock = InterruptSafeLock::new(history, "ELDARIN_HIST");
+        for &byte in b"[ELDARIN] History lock created\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
         core::ptr::write(core::ptr::addr_of_mut!(COMMAND_HISTORY).cast(), history_lock);
+        for &byte in b"[ELDARIN] History written\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
         HISTORY_INITIALIZED = true;
+        for &byte in b"[ELDARIN] History initialized flag set\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
+
+        for &byte in b"[ELDARIN] Init complete!\n".iter() {
+            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") byte, options(nomem, nostack, preserves_flags));
+        }
     }
 }
 
@@ -276,11 +315,12 @@ pub fn handle_char(ch: char) {
                 }
             }
             _ => {
-                // Regular character
+                // Regular character - just buffer it
+                // DO NOT print from interrupt context! The VGA buffer lock
+                // might be held by interrupted code, causing a deadlock.
+                // Characters will be echoed by the shell thread when polling.
                 let mut buffer = get_buffer().lock();
-                if buffer.push(ch) {
-                    // Character already echoed by keyboard driver
-                } else {
+                if !buffer.push(ch) {
                     // Buffer full - could beep or show error
                 }
             }
@@ -297,7 +337,7 @@ pub fn handle_backspace() {
 
         let mut buffer = get_buffer().lock();
         if buffer.pop() {
-            // Erase character visually (VGA driver handles the erasure)
+            // Erase character visually
             crate::print!("\x08");
         }
     }
@@ -313,18 +353,9 @@ pub fn handle_arrow_up() {
         let mut history = get_history().lock();
         if let Some(cmd_bytes) = history.previous() {
             let mut buffer = get_buffer().lock();
-            let current_len = buffer.as_str().len();
-
-            // Erase current line (VGA driver erases each character as we backspace)
-            for _ in 0..current_len {
-                crate::print!("\x08");
-            }
-
-            // Set buffer to historical command and display it
+            // DO NOT print from interrupt context (deadlock risk)
+            // Just update the buffer - shell thread will handle display
             buffer.set_from_bytes(cmd_bytes);
-            if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
-                crate::print!("{}", cmd_str);
-            }
         }
     }
 }
@@ -338,19 +369,11 @@ pub fn handle_arrow_down() {
 
         let mut history = get_history().lock();
         let mut buffer = get_buffer().lock();
-        let current_len = buffer.as_str().len();
 
-        // Erase current line (VGA driver erases each character as we backspace)
-        for _ in 0..current_len {
-            crate::print!("\x08");
-        }
-
+        // DO NOT print from interrupt context (deadlock risk)
+        // Just update the buffer - shell thread will handle display
         if let Some(cmd_bytes) = history.next() {
-            // Set buffer to next historical command and display it
             buffer.set_from_bytes(cmd_bytes);
-            if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
-                crate::print!("{}", cmd_str);
-            }
         } else {
             // At the end of history, clear buffer
             buffer.clear();
@@ -474,6 +497,7 @@ fn execute_command(input: &str) {
         "sigils" => cmd_sigils(),          // Weaver's Sigils (stack canaries)
         "permanence" => cmd_permanence(),  // Rune of Permanence (immutable structures)
         "fate" => cmd_fate(args),          // Concordance of Fates (RBAC)
+        "test-user" => cmd_test_user(),    // Launch test user space program
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -1146,4 +1170,73 @@ fn cmd_permanence() {
 /// FATE - Manage the Concordance of Fates (RBAC)
 fn cmd_fate(args: &str) {
     crate::fate_command::cmd_fate(args);
+}
+
+/// Launch test user space program
+fn cmd_test_user() {
+    use crate::test_programs::HELLO_ELF;
+    use crate::loom_of_fate::{create_user_thread, get_harbor, ThreadPriority, load_elf, ThreadId};
+
+    crate::serial_println!("[CMD] test-user command started");
+    crate::println!("◈ Loading test user program...");
+    crate::serial_println!("[CMD] After first println");
+
+    // Parse ELF
+    let loaded_elf = match load_elf(HELLO_ELF) {
+        Ok(elf) => elf,
+        Err(e) => {
+            crate::println!("✗ Failed to parse ELF: {}", e);
+            return;
+        }
+    };
+
+    crate::println!("  Entry point: {:#x}", loaded_elf.entry_point);
+
+    // Create Vessel from ELF
+    let harbor = get_harbor();
+    let mut harbor_lock = harbor.lock();
+
+    match harbor_lock.moor_user_vessel(
+        None,  // No parent
+        HELLO_ELF,
+        alloc::string::String::from("test-user"),
+        ThreadId(0),  // Placeholder main thread ID
+    ) {
+        Ok(vessel_id) => {
+            drop(harbor_lock);
+
+            // Get vessel info
+            let harbor_lock = harbor.lock();
+            let vessel = harbor_lock.find_vessel(vessel_id).unwrap();
+            let entry_point = vessel.entry_point();
+            // IMPORTANT: Get the actual user stack from the vessel's address space
+            // The stack was allocated during ELF loading and mapped into page tables
+            let user_stack = vessel.address_space().regions
+                .iter()
+                .find(|r| matches!(r.region_type, crate::mana_pool::user_space::RegionType::Stack))
+                .map(|r| r.end().as_u64())
+                .unwrap_or(0x0000_7FFF_FFFF_0000u64);
+            crate::serial_println!("[TEST-USER] Using user stack at: {:#x}", user_stack);
+            drop(harbor_lock);
+
+            // Create user thread
+            match create_user_thread(
+                vessel_id,
+                entry_point,
+                user_stack,
+                ThreadPriority::Normal,
+            ) {
+                Ok(thread_id) => {
+                    crate::println!("✓ User thread created: Thread {}", thread_id.0);
+                    crate::println!("  (Thread will run on next schedule)");
+                }
+                Err(e) => {
+                    crate::println!("✗ Failed to create user thread: {:?}", e);
+                }
+            }
+        }
+        Err(e) => {
+            crate::println!("✗ Failed to create vessel: {}", e);
+        }
+    }
 }

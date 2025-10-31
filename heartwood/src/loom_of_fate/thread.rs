@@ -1,6 +1,7 @@
 //! Thread definitions - The Threads of Fate
 
 use super::context::ThreadContext;
+use super::vessel::VesselId;
 
 /// A unique identifier for a thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,6 +57,10 @@ pub struct Thread {
     /// It should NEVER be exposed to userspace
     pub(crate) sigil: u64,
 
+    /// The Vessel (process) this thread belongs to
+    /// None for kernel threads that don't belong to any Vessel
+    pub(crate) vessel_id: Option<VesselId>,
+
     // Harmony tracking
     pub(crate) resource_usage: ResourceUsage,
     pub(crate) harmony_score: f32,
@@ -75,12 +80,14 @@ impl Thread {
     /// * `priority` - Thread priority level
     /// * `stack_bottom` - Low address of thread's stack
     /// * `stack_top` - High address of thread's stack
+    /// * `vessel_id` - VesselId this thread belongs to (None for kernel threads)
     pub fn new(
         id: ThreadId,
         entry_point: fn() -> !,
         priority: ThreadPriority,
         stack_bottom: u64,
         stack_top: u64,
+        vessel_id: Option<VesselId>,
     ) -> Self {
         // Create initial context for this thread
         let context = ThreadContext::new(entry_point as u64, stack_top);
@@ -102,6 +109,7 @@ impl Thread {
             stack_bottom,
             stack_top,
             sigil,
+            vessel_id,
             resource_usage: ResourceUsage::default(),
             harmony_score: 1.0, // Start in perfect harmony
             time_slices_used: 0,
@@ -124,6 +132,55 @@ impl Thread {
         let high = rng.next_u32() as u64;
         let low = rng.next_u32() as u64;
         (high << 32) | low
+    }
+
+    /// Create a thread with a pre-initialized context
+    ///
+    /// Used for user-mode threads where the context is set up specially
+    /// for ring 3 execution.
+    ///
+    /// # Arguments
+    /// * `id` - Unique thread identifier
+    /// * `context` - Pre-initialized ThreadContext (for user mode)
+    /// * `priority` - Thread priority level
+    /// * `vessel_id` - VesselId this thread belongs to (Some for user threads)
+    ///
+    /// # Returns
+    /// A new Thread with the given context
+    pub fn new_with_context(
+        id: ThreadId,
+        context: ThreadContext,
+        priority: ThreadPriority,
+        vessel_id: Option<VesselId>,
+    ) -> Self {
+        // Generate unique Weaver's Sigil (stack canary) for this thread
+        let sigil = Self::generate_sigil();
+
+        // Dummy entry point (not used for user threads)
+        fn dummy_entry() -> ! {
+            loop {
+                unsafe {
+                    core::arch::asm!("hlt", options(nomem, nostack));
+                }
+            }
+        }
+
+        Self {
+            id,
+            state: ThreadState::Resting,
+            priority,
+            entry_point: dummy_entry,
+            context,
+            stack_bottom: 0,  // User stack, we don't track it in Thread
+            stack_top: 0,
+            sigil,
+            vessel_id,
+            resource_usage: ResourceUsage::default(),
+            harmony_score: 1.0,
+            time_slices_used: 0,
+            yields: 0,
+            last_run_time: 0,
+        }
     }
 
     /// Get a mutable reference to the thread's context
@@ -183,6 +240,16 @@ impl Thread {
     /// Update resource usage statistics
     pub fn update_resource_usage(&mut self, usage: ResourceUsage) {
         self.resource_usage = usage;
+    }
+
+    /// Get the VesselId this thread belongs to (if any)
+    pub fn vessel_id(&self) -> Option<VesselId> {
+        self.vessel_id
+    }
+
+    /// Set the VesselId this thread belongs to
+    pub fn set_vessel_id(&mut self, vessel_id: Option<VesselId>) {
+        self.vessel_id = vessel_id;
     }
 }
 
