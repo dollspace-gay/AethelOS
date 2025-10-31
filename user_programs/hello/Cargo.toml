@@ -1,0 +1,13 @@
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
+
+# Don't inherit workspace from parent
+[workspace]
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[dependencies]

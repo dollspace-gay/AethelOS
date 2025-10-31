@@ -3,7 +3,7 @@
 //! Provides proper initialization and thread-safe output to COM1
 
 use core::fmt;
-use spin::Mutex;
+use crate::mana_pool::InterruptSafeLock;
 use x86_64::instructions::port::Port;
 
 /// COM1 base port
@@ -99,7 +99,9 @@ impl fmt::Write for SerialPort {
 }
 
 /// Global serial port instance
-static SERIAL1: Mutex<SerialPort> = Mutex::new(SerialPort::new(COM1));
+/// CRITICAL: Must use InterruptSafeLock because serial_println can be called
+/// from interrupt handlers (keyboard), and we need to prevent deadlocks.
+static SERIAL1: InterruptSafeLock<SerialPort> = InterruptSafeLock::new(SerialPort::new(COM1), "SERIAL1");
 
 /// Initialize the serial port (call once during boot)
 pub unsafe fn init() {
@@ -139,5 +141,7 @@ macro_rules! serial_println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    SERIAL1.lock().write_fmt(args).unwrap();
+    // CRITICAL: Cannot use unwrap() because panic formatting allocates.
+    // If write fails, silently ignore (serial is for debugging anyway).
+    let _ = SERIAL1.lock().write_fmt(args);
 }

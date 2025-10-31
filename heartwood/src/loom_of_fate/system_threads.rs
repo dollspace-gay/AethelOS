@@ -34,6 +34,16 @@ pub fn idle_thread() -> ! {
     // The Great Hand-Off doesn't do this, so we must do it ourselves
     // DO THIS BEFORE ENABLING INTERRUPTS to avoid deadlock!
     unsafe {
+        // DEBUG: Mark function entry
+        for &byte in b"[FUNC:idle_prep_handoff]".iter() {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") byte,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+
         use super::{get_loom, ThreadId};
         let mut loom = get_loom().lock();
         let idle_id = ThreadId(1);

@@ -83,27 +83,19 @@ impl ChaCha8Rng {
 
     /// Create a new ChaCha8 RNG from a 64-bit seed
     pub fn from_seed(seed: u64) -> Self {
-        let mut state = [0u32; 16];
-
-        // ChaCha constant "expand 32-byte k"
-        state[0] = 0x61707865;
-        state[1] = 0x3320646e;
-        state[2] = 0x79622d32;
-        state[3] = 0x6b206574;
-
-        // Seed material
-        state[4] = seed as u32;
-        state[5] = (seed >> 32) as u32;
-        state[6] = seed as u32;
-        state[7] = (seed >> 32) as u32;
-
-        // Mix in timestamp for extra entropy
         let timestamp = unsafe { _rdtsc() };
-        state[8] = timestamp as u32;
-        state[9] = (timestamp >> 32) as u32;
 
         Self {
-            state,
+            state: [
+                // ChaCha constant "expand 32-byte k"
+                0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+                // Seed material
+                seed as u32, (seed >> 32) as u32, seed as u32, (seed >> 32) as u32,
+                // Mix in timestamp for extra entropy
+                timestamp as u32, (timestamp >> 32) as u32,
+                // Rest zeros
+                0, 0, 0, 0, 0, 0,
+            ],
             buffer: [0; 64],
             buffer_pos: 64, // Force generation on first call
         }
@@ -133,10 +125,14 @@ impl ChaCha8Rng {
             working[i] = working[i].wrapping_add(self.state[i]);
         }
 
-        // Convert to bytes
-        for (i, &word) in working.iter().enumerate() {
-            let bytes = word.to_le_bytes();
-            self.buffer[i * 4..(i + 1) * 4].copy_from_slice(&bytes);
+        // Convert to bytes - manual byte extraction to avoid to_le_bytes() and copy_from_slice()
+        // (those methods hang in higher-half with -mcmodel=kernel)
+        for i in 0..16 {
+            let word = working[i];
+            self.buffer[i * 4] = (word & 0xFF) as u8;
+            self.buffer[i * 4 + 1] = ((word >> 8) & 0xFF) as u8;
+            self.buffer[i * 4 + 2] = ((word >> 16) & 0xFF) as u8;
+            self.buffer[i * 4 + 3] = ((word >> 24) & 0xFF) as u8;
         }
 
         // Increment counter
@@ -173,11 +169,20 @@ impl ChaCha8Rng {
             self.generate_block();
         }
 
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&self.buffer[self.buffer_pos..self.buffer_pos + 8]);
+        // Direct byte manipulation instead of stack array + copy_from_slice
+        // (those methods can hang in higher-half with -mcmodel=kernel)
+        let pos = self.buffer_pos;
+        let result = (self.buffer[pos] as u64)
+            | ((self.buffer[pos + 1] as u64) << 8)
+            | ((self.buffer[pos + 2] as u64) << 16)
+            | ((self.buffer[pos + 3] as u64) << 24)
+            | ((self.buffer[pos + 4] as u64) << 32)
+            | ((self.buffer[pos + 5] as u64) << 40)
+            | ((self.buffer[pos + 6] as u64) << 48)
+            | ((self.buffer[pos + 7] as u64) << 56);
         self.buffer_pos += 8;
 
-        u64::from_le_bytes(bytes)
+        result
     }
 
     /// Get next random u32

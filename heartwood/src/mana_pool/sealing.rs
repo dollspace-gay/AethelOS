@@ -30,28 +30,19 @@ impl CapabilitySealer {
     /// # Safety
     /// Must be called only once during kernel initialization
     pub fn new() -> Self {
-        let seal_key = Self::generate_seal_key();
-        Self { seal_key }
-    }
-
-    /// Generate a cryptographically secure seal key
-    ///
-    /// Uses hardware entropy sources (RDTSC for boot-safety)
-    /// mixed with ChaCha8 to generate 256 bits of entropy.
-    fn generate_seal_key() -> [u8; 32] {
-        let mut key = [0u8; 32];
-
-        // Use ChaCha8 seeded from fast hardware entropy (RDTSC-only for boot safety)
         let mut rng = ChaCha8Rng::from_hardware_fast();
 
-        // Generate 32 random bytes
+        // Generate 32 bytes of cryptographic randomness for seal key
+        let mut seal_key = [0u8; 32];
         for i in 0..8 {
             let random = rng.next_u32();
-            let bytes = random.to_le_bytes();
-            key[i * 4..(i + 1) * 4].copy_from_slice(&bytes);
+            seal_key[i * 4] = (random & 0xFF) as u8;
+            seal_key[i * 4 + 1] = ((random >> 8) & 0xFF) as u8;
+            seal_key[i * 4 + 2] = ((random >> 16) & 0xFF) as u8;
+            seal_key[i * 4 + 3] = ((random >> 24) & 0xFF) as u8;
         }
 
-        key
+        Self { seal_key }
     }
 
     /// Compute HMAC-SHA256 seal for capability data
@@ -115,7 +106,6 @@ pub unsafe fn init() {
         let sealer = CapabilitySealer::new();
         core::ptr::write(core::ptr::addr_of_mut!(SEALER).cast(), sealer);
         SEALER_INITIALIZED = true;
-        // TODO: Add logging when serial_println! is available
     }
 }
 

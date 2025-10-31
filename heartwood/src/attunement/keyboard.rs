@@ -34,7 +34,7 @@ static mut KEYBOARD_INITIALIZED: bool = false;
 pub fn init() {
     unsafe {
         let keyboard = Keyboard::new();
-        let lock = InterruptSafeLock::new(keyboard);
+        let lock = InterruptSafeLock::new(keyboard, "KEYBOARD");
         core::ptr::write(core::ptr::addr_of_mut!(KEYBOARD).cast(), lock);
         KEYBOARD_INITIALIZED = true;
     }
@@ -136,7 +136,11 @@ pub fn on_interrupt() {
                     crate::eldarin::handle_arrow_down();
                 }
                 _ => {
-                    // Regular character: display and buffer it
+                    // Regular character: echo it to screen
+                    // SAFETY: We're already in an interrupt handler (interrupts disabled),
+                    // but we need to ensure VGA buffer access is safe. Since VGA Writer
+                    // doesn't use proper locking, we just access it directly.
+                    // The real fix would be to make WRITER use InterruptSafeLock.
                     crate::print!("{}", character);
                     crate::eldarin::handle_char(character);
                 }

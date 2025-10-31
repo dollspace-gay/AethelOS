@@ -72,13 +72,9 @@ unsafe fn log_canary_violation() {
     crate::println!("  A buffer overflow has overwritten the stack canary.");
     crate::println!();
 
-    // Try to get current thread info (might fail if stack is corrupted)
-    // Note: We can't use catch_unwind in no_std, so if this fails, we'll panic anyway
-    if let Some(thread_id) = crate::loom_of_fate::current_thread() {
-        crate::println!("  Thread ID: {}", thread_id.0);
-    } else {
-        crate::println!("  Thread ID: <unable to determine>");
-    }
+    // CRITICAL: Do NOT call current_thread() here!
+    // If we're called while holding LOOM lock, current_thread() will deadlock.
+    // Just output minimal info and halt immediately.
 
     crate::println!();
     crate::println!("  Expected canary: 0x{:016x}", __stack_chk_guard.load(Ordering::Relaxed));

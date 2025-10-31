@@ -12,8 +12,7 @@
   "panic-strategy": "abort",
   "disable-redzone": true,
   "features": "",
-  "code-model": "kernel",
-  "relocation-model": "static",
+  "relocation-model": "pic",
   "position-independent-executables": false,
   "static-position-independent-executables": false,
   "supports-stack-protector": true

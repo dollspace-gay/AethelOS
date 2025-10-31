@@ -21,10 +21,19 @@ pub mod stack;
 pub mod system_threads;
 pub mod thread;
 pub mod harmony;
+pub mod vessel;
+pub mod harbor;
+pub mod syscalls;
+pub mod elf_loader;
 
 pub use scheduler::{Scheduler, SchedulerStats};
 pub use thread::{Thread, ThreadId, ThreadState, ThreadPriority};
 pub use harmony::{HarmonyAnalyzer, HarmonyMetrics};
+pub use vessel::{Vessel, VesselId, VesselState};
+pub use harbor::{Harbor, HarborStats};
+pub use syscalls::{dispatch_syscall, SyscallResult, SyscallError};
+pub use elf_loader::{load_elf, LoadedElf, ElfError};
+pub use context::ThreadContext;
 
 use crate::mana_pool::InterruptSafeLock;
 use core::mem::MaybeUninit;
@@ -35,6 +44,11 @@ use alloc::boxed::Box;
 // Using InterruptSafeLock to prevent deadlocks during preemptive multitasking
 static mut LOOM: MaybeUninit<InterruptSafeLock<Box<Scheduler>>> = MaybeUninit::uninit();
 static mut LOOM_INITIALIZED: bool = false;
+
+// HARBOR stores the process table (registry of all Vessels)
+// Using InterruptSafeLock to prevent deadlocks during preemptive multitasking
+static mut HARBOR: MaybeUninit<InterruptSafeLock<Harbor>> = MaybeUninit::uninit();
+static mut HARBOR_INITIALIZED: bool = false;
 
 /// Helper to write to serial for debugging
 unsafe fn serial_out(c: u8) {
@@ -56,6 +70,20 @@ unsafe fn serial_out(c: u8) {
 /// Note: This does NOT start the threads or enable interrupts.
 /// That happens during the Great Hand-Off.
 pub fn init() {
+    // CRITICAL: Disable interrupts during LOOM initialization to prevent deadlock!
+    // Keyboard interrupts can fire and try to lock LOOM while we're initializing it.
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        for &byte in b"[LOOM INIT] Interrupts disabled\n".iter() {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") byte,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+
     unsafe {
         serial_out(b'1'); // Before init
 
@@ -65,7 +93,7 @@ pub fn init() {
 
         // Create an interrupt-safe lock around the small Box pointer
         serial_out(b'C'); // About to create InterruptSafeLock
-        let lock = InterruptSafeLock::new(scheduler_on_heap);
+        let lock = InterruptSafeLock::new(scheduler_on_heap, "LOOM");
         serial_out(b'D'); // InterruptSafeLock created
 
         // Write the small InterruptSafeLock<Box<Scheduler>> to static
@@ -76,33 +104,130 @@ pub fn init() {
         serial_out(b'3'); // Marked as initialized
     }
 
+    // Initialize Harbor (process table)
+    unsafe {
+        serial_out(b'H'); // Harbor init start
+        let harbor = Harbor::new();
+        let harbor_lock = InterruptSafeLock::new(harbor, "HARBOR");
+        core::ptr::write(core::ptr::addr_of_mut!(HARBOR).cast(), harbor_lock);
+        HARBOR_INITIALIZED = true;
+        serial_out(b'h'); // Harbor initialized
+
+        for &byte in b"[HARBOR INIT] Harbor initialized\n".iter() {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") byte,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+
     // Now create the system threads (but don't start them yet)
     crate::println!("◈ Forging the system threads...");
 
     // Spawn the idle thread (lowest priority - will be first to run)
-    spawn(system_threads::idle_thread, ThreadPriority::Idle)
-        .expect("Failed to spawn idle thread");
+    // CRITICAL: Do NOT use .expect() here! It can panic with formatting,
+    // which might try to lock LOOM again, causing deadlock.
+    match spawn(system_threads::idle_thread, ThreadPriority::Idle) {
+        Ok(_) => {},
+        Err(_) => {
+            unsafe {
+                let msg = b"\n[FATAL] Failed to spawn idle thread!\n";
+                for &byte in msg.iter() {
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x3f8u16,
+                        in("al") byte,
+                        options(nomem, nostack, preserves_flags)
+                    );
+                }
+                loop {
+                    core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                }
+            }
+        }
+    }
 
     // Spawn the keyboard handler thread
-    spawn(system_threads::keyboard_thread, ThreadPriority::High)
-        .expect("Failed to spawn keyboard thread");
+    match spawn(system_threads::keyboard_thread, ThreadPriority::High) {
+        Ok(_) => {},
+        Err(_) => {
+            unsafe {
+                let msg = b"\n[FATAL] Failed to spawn keyboard thread!\n";
+                for &byte in msg.iter() {
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x3f8u16,
+                        in("al") byte,
+                        options(nomem, nostack, preserves_flags)
+                    );
+                }
+                loop {
+                    core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                }
+            }
+        }
+    }
 
     // Spawn the shell thread
-    spawn(system_threads::shell_thread, ThreadPriority::Normal)
-        .expect("Failed to spawn shell thread");
+    match spawn(system_threads::shell_thread, ThreadPriority::Normal) {
+        Ok(_) => {},
+        Err(_) => {
+            unsafe {
+                let msg = b"\n[FATAL] Failed to spawn shell thread!\n";
+                for &byte in msg.iter() {
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x3f8u16,
+                        in("al") byte,
+                        options(nomem, nostack, preserves_flags)
+                    );
+                }
+                loop {
+                    core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+                }
+            }
+        }
+    }
 
     // Debug: Verify thread contexts are correct
+    // CRITICAL: Collect data FIRST, release lock, THEN print
+    // to avoid deadlock if println tries to lock LOOM
     unsafe {
-        let loom = get_loom().lock();
-        for tid in 1..=3 {
-            if let Some(ctx) = loom.get_thread_context(ThreadId(tid)) {
-                crate::println!("  Thread {}: context@{:p}, rsp={:#x}, rip={:#x}",
-                               tid, ctx, (*ctx).rsp, (*ctx).rip);
+        let mut thread_info = [(0u64, 0u64, 0u64); 3];
+        {
+            let loom = get_loom().lock();
+            for tid_val in 1u64..=3u64 {
+                if let Some(ctx) = loom.get_thread_context(ThreadId(tid_val)) {
+                    thread_info[(tid_val - 1) as usize] = (tid_val, (*ctx).rsp, (*ctx).rip);
+                }
+            }
+            // Lock released here
+        }
+
+        // Now print AFTER releasing the lock
+        for (tid, rsp, rip) in thread_info.iter() {
+            if *tid != 0 {
+                crate::println!("  Thread {}: rsp={:#x}, rip={:#x}", tid, rsp, rip);
             }
         }
     }
 
     crate::println!("◈ System threads forged. Ready for the Great Hand-Off.");
+
+    // NOTE: Interrupts remain disabled here. They will be enabled later by
+    // attunement::init() after the IDT is properly set up.
+    unsafe {
+        for &byte in b"[LOOM INIT] Complete (interrupts still disabled)\n".iter() {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") byte,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
 }
 
 /// Get reference to LOOM (assumes initialized)
@@ -113,9 +238,84 @@ pub unsafe fn get_loom() -> &'static InterruptSafeLock<Box<Scheduler>> {
     &*core::ptr::addr_of!(LOOM).cast::<InterruptSafeLock<Box<Scheduler>>>()
 }
 
+/// Get reference to Harbor (process table)
+///
+/// # Safety
+/// Harbor must be initialized before calling this function
+pub fn get_harbor() -> &'static InterruptSafeLock<Harbor> {
+    unsafe {
+        if !HARBOR_INITIALIZED {
+            panic!("Harbor not initialized!");
+        }
+        &*core::ptr::addr_of!(HARBOR).cast::<InterruptSafeLock<Harbor>>()
+    }
+}
+
 /// Spawn a new thread
 pub fn spawn(entry_point: fn() -> !, priority: ThreadPriority) -> Result<ThreadId, LoomError> {
     unsafe { get_loom().lock().spawn(entry_point, priority) }
+}
+
+/// Create a user-mode thread for a Vessel
+///
+/// This creates a thread that will execute in ring 3 (user mode) within
+/// the specified Vessel's address space.
+///
+/// # Arguments
+/// * `vessel_id` - The Vessel this thread belongs to
+/// * `entry_point` - User space entry point address
+/// * `user_stack_top` - Top of user stack
+/// * `priority` - Thread priority
+///
+/// # Returns
+/// ThreadId of the created thread
+///
+/// # Note
+/// Creates a user-mode thread within a Vessel (Ring 3 execution).
+pub fn create_user_thread(
+    vessel_id: VesselId,
+    entry_point: u64,
+    user_stack_top: u64,
+    priority: ThreadPriority,
+) -> Result<ThreadId, LoomError> {
+    without_interrupts(|| {
+        let mut loom = unsafe { get_loom().lock() };
+
+        // Get Vessel info (page table address)
+        let harbor = get_harbor().lock();
+        let vessel = harbor.find_vessel(vessel_id)
+            .ok_or(LoomError::VesselNotFound)?;
+        let page_table_phys = vessel.page_table_phys();
+        drop(harbor);
+
+        // Generate thread ID
+        let thread_id = ThreadId(loom.next_thread_id);
+        loom.next_thread_id += 1;
+
+        // Create user-mode context (Ring 3 with user segments)
+        let context = ThreadContext::new_user_mode(
+            entry_point,
+            user_stack_top,
+            page_table_phys,
+        );
+
+        // Create thread with pre-initialized context
+        let thread = Thread::new_with_context(
+            thread_id,
+            context,
+            priority,
+            Some(vessel_id),
+        );
+
+        // Add to thread list and ready queue
+        loom.threads.push(thread);
+        loom.ready_queue.push_back(thread_id);
+
+        crate::serial_println!("[LOOM] Created user thread {} for Vessel {} at entry {:#x}",
+                               thread_id.0, vessel_id.0, entry_point);
+
+        Ok(thread_id)
+    })
 }
 
 /// Execute a closure with interrupts disabled
@@ -159,37 +359,96 @@ where
 
 /// Yield the current thread
 pub fn yield_now() {
+    // DEBUG: Mark function entry
+    unsafe {
+        for &byte in b"[FUNC:yield_now]".iter() {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x3f8u16,
+                in("al") byte,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+
     // CRITICAL: Disable interrupts while holding the scheduler lock
-    // to prevent deadlock when timer interrupt fires during context switch
+    // to prevent deadlock when timer interrupt fires during context switch.
+    // The lock MUST be held across the context switch.
     without_interrupts(|| {
         unsafe {
-            // Step 1: Lock scheduler and prepare for context switch
-            let (should_switch, from_ctx_ptr, to_ctx_ptr) = {
-                let mut loom = get_loom().lock();
+            // Step 1: Lock scheduler
+            let mut loom = get_loom().lock();
 
-                // Only yield if we actually have a current thread
-                if loom.current_thread_id().is_none() {
-                    return;
+            // Only yield if we actually have a current thread
+            if loom.current_thread_id().is_none() {
+                // No thread, just return. Lock will be released.
+                return;
+            }
+
+            // Step 2: Prepare for context switch
+            let (should_switch, from_ctx_ptr, to_ctx_ptr, new_kernel_stack) = loom.prepare_yield();
+
+            crate::serial_println!("[YIELD] After prepare_yield: should_switch={}, new_kernel_stack={:?}",
+                                   should_switch, new_kernel_stack);
+
+            // Step 3: If we should switch, do it
+            if should_switch {
+                crate::serial_println!("[YIELD] Inside should_switch block");
+                // Update TSS.rsp[0] if switching to a user-mode thread
+                let is_user_thread = new_kernel_stack.is_some();
+                crate::serial_println!("[YIELD] is_user_thread={}", is_user_thread);
+                if let Some(kernel_stack) = new_kernel_stack {
+                    crate::serial_println!("[YIELD] About to set_kernel_stack({:#x})", kernel_stack);
+                    crate::attunement::set_kernel_stack(kernel_stack);
+                    crate::serial_println!("[YIELD] ✓ set_kernel_stack completed");
                 }
 
-                // Prepare for context switch and get pointers
-                loom.prepare_yield()
-            };
+                // CRITICAL: Release the lock BEFORE the context switch!
+                // We MUST do this because the new thread might be starting from its
+                // entry point (not resuming from yield_now), and wouldn't know to
+                // release the lock, causing a deadlock.
+                drop(loom);
 
-            // Step 2: If we should switch, drop the lock and do the context switch
-            if should_switch {
-                // The lock is now dropped! (loom was dropped at end of block above)
-                serial_out(b'L'); // Lock dropped!
-                // Now we can safely context switch without holding any locks
-                serial_out(b'C'); // About to context switch
-                context::switch_context_cooperative(from_ctx_ptr, to_ctx_ptr);
-                serial_out(b'R'); // Returned from context switch
+                // Now do the context switch WITHOUT holding the lock
+                // Interrupts are still disabled by without_interrupts(), so this is safe
 
-                // When we return here, we're running as a different thread
-                // Re-lock and update state
-                let mut loom = get_loom().lock();
-                loom.after_yield();
+                // CRITICAL: Use IRETQ-based switch for user-mode threads!
+                // switch_context_cooperative uses RET which cannot change privilege levels
+                // switch_context uses IRETQ which properly transitions to ring 3
+                if is_user_thread {
+                    // DEBUG: Check RSP before calling switch_context
+                    unsafe {
+                        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'U', options(nomem, nostack, preserves_flags));
+                        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'S', options(nomem, nostack, preserves_flags));
+                        core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'R', options(nomem, nostack, preserves_flags));
+
+                        // Check current RSP - if it's a user address, we'll fault on CALL
+                        let current_rsp: u64;
+                        core::arch::asm!("mov {}, rsp", out(reg) current_rsp, options(nomem, nostack, preserves_flags));
+
+                        // Check if RSP is in user space (< 0x8000000000000000)
+                        if current_rsp < 0x8000000000000000 {
+                            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'!', options(nomem, nostack, preserves_flags));
+                            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'U', options(nomem, nostack, preserves_flags));
+                            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'S', options(nomem, nostack, preserves_flags));
+                            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'R', options(nomem, nostack, preserves_flags));
+                        } else {
+                            core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'K', options(nomem, nostack, preserves_flags));
+                        }
+                    }
+                    context::switch_context(from_ctx_ptr, to_ctx_ptr);
+                    crate::serial_println!("[YIELD] ✓ Returned from switch_context");
+                } else {
+                    context::switch_context_cooperative(from_ctx_ptr, to_ctx_ptr);
+                }
+
+                // --- WE ARE NOW THE NEW THREAD ---
+                // The lock was released before the switch, so we don't hold it
+                // No cleanup needed
             }
+
+            // Step 4: The `without_interrupts` guard drops here,
+            // re-enabling interrupts safely.
         }
     });
 }
@@ -212,14 +471,13 @@ pub unsafe fn preemptive_yield(interrupt_frame_ptr: *const u64) -> ! {
     // No need for without_interrupts() wrapper
 
     // Step 1: Lock scheduler and prepare for context switch
-    let (should_switch, from_ctx_ptr, to_ctx_ptr) = {
+    let (should_switch, from_ctx_ptr, to_ctx_ptr, new_kernel_stack) = {
         let mut loom = get_loom().lock();
 
         // Only yield if we actually have a current thread
         if loom.current_thread_id().is_none() {
             // No current thread - this shouldn't happen, but handle it gracefully
-            // We need to return via IRETQ, not return normally
-            // Just restore the interrupted state
+            // Release lock and return via IRETQ
             drop(loom);
             core::arch::asm!(
                 "iretq",
@@ -228,13 +486,20 @@ pub unsafe fn preemptive_yield(interrupt_frame_ptr: *const u64) -> ! {
         }
 
         // Prepare for context switch and get pointers
-        loom.prepare_yield()
+        let result = loom.prepare_yield();
+        // Lock automatically drops here
+        result
     };
 
-    // Step 2: If we should switch, save current context and switch
-    if should_switch {
-        // The lock is now dropped! (loom was dropped at end of block above)
+    // Update TSS.rsp[0] if switching to a user-mode thread
+    if let Some(kernel_stack) = new_kernel_stack {
+        crate::attunement::set_kernel_stack(kernel_stack);
+    }
 
+    // Step 2: If we should switch, save current context and switch
+    // NOTE: Lock is released. This is safe because we're in interrupt context
+    // with interrupts disabled - no other interrupt can interfere
+    if should_switch {
         // Save the interrupted thread's context from the interrupt frame
         context::save_preempted_context(from_ctx_ptr as *mut context::ThreadContext, interrupt_frame_ptr);
 
@@ -356,13 +621,41 @@ pub fn get_time_quantum() -> u64 {
 /// # Safety
 /// Returns a raw pointer to the idle thread's context structure
 pub unsafe fn get_idle_thread_context() -> *const context::ThreadContext {
+    // DEBUG: Mark function entry
+    for &byte in b"[FUNC:get_idle_ctx]".iter() {
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0x3f8u16,
+            in("al") byte,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
     let loom = get_loom().lock();
 
     // The idle thread should be thread ID 1 (first spawned)
     let idle_thread_id = ThreadId(1);
 
-    loom.get_thread_context(idle_thread_id)
-        .expect("Idle thread not found!")
+    // CRITICAL: Do NOT use .expect() here! It can panic with formatting,
+    // which might try to lock LOOM again, causing deadlock.
+    match loom.get_thread_context(idle_thread_id) {
+        Some(ctx) => ctx,
+        None => {
+            // Idle thread not found - output error and halt WITHOUT panicking
+            let msg = b"\n[FATAL] Idle thread not found in LOOM!\n";
+            for &byte in msg.iter() {
+                core::arch::asm!(
+                    "out dx, al",
+                    in("dx") 0x3f8u16,
+                    in("al") byte,
+                    options(nomem, nostack, preserves_flags)
+                );
+            }
+            loop {
+                core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+            }
+        }
+    }
 }
 
 /// Prepare for the Great Hand-Off by setting the idle thread as current
@@ -403,4 +696,5 @@ pub enum LoomError {
     ThreadNotFound,
     InvalidPriority,
     StackAllocationFailed,
+    VesselNotFound,
 }

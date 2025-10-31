@@ -12,12 +12,13 @@ echo.
   -hda aethelos-test-ext4.img ^
   -boot d ^
   -serial file:serial.log ^
-  -m 256M ^
+  -m 1024M ^
   -display gtk ^
   -no-reboot ^
-  -cpu qemu64,+smep,+smap ^
+  -cpu max ^
   -no-shutdown ^
-  -d guest_errors
+  -D qemu-debug.log ^
+  -d int,cpu_reset,guest_errors 
 
 echo.
 echo QEMU exited.
