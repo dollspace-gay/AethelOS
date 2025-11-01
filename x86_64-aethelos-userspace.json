@@ -1,0 +1,41 @@
+{
+  "llvm-target": "x86_64-unknown-none",
+  "data-layout": "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+  "arch": "x86_64",
+  "target-endian": "little",
+  "target-pointer-width": 64,
+  "target-c-int-width": 32,
+  "os": "aethelos",
+  "env": "userspace",
+  "vendor": "unknown",
+  "executables": true,
+  "linker-flavor": "ld.lld",
+  "linker": "rust-lld",
+  "panic-strategy": "abort",
+  "disable-redzone": true,
+  "features": "+soft-float",
+  "code-model": "small",
+  "relocation-model": "pic",
+  "position-independent-executables": true,
+  "static-position-independent-executables": false,
+  "supports-stack-protector": true,
+  "stack-probes": {
+    "kind": "inline-or-call"
+  },
+  "eh-frame-header": false,
+  "pre-link-args": {
+    "ld.lld": [
+      "--build-id=none",
+      "--hash-style=sysv"
+    ]
+  },
+  "late-link-args": {},
+  "dynamic-linking": false,
+  "only-cdylib": false,
+  "exe-suffix": "",
+  "is-like-windows": false,
+  "is-like-msvc": false,
+  "is-like-wasm": false,
+  "singlethread": false,
+  "emit-debug-gdb-scripts": false
+}

@@ -3,11 +3,10 @@ name = "hello"
 version = "0.1.0"
 edition = "2021"
 
-# Don't inherit workspace from parent
-[workspace]
+[dependencies]
 
 [profile.release]
-panic = "abort"
+opt-level = "z"
 lto = true
-
-[dependencies]
+strip = true
+panic = "abort"
