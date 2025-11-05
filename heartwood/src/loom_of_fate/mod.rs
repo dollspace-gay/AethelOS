@@ -485,9 +485,20 @@ pub fn yield_now() {
             // Step 3: If we should switch, do it
             if should_switch {
                 crate::serial_println!("[YIELD] Inside should_switch block");
+
+                // Check if we need IRETQ-based switching (for privilege level changes)
+                // We need IRETQ if:
+                // 1. The TARGET thread requires a privilege change (has kernel_stack), OR
+                // 2. The SOURCE thread is not at Ring 0 (CS != 0x08)
+                let target_needs_iretq = new_kernel_stack.is_some();
+                let source_cs = unsafe { (*from_ctx_ptr).cs };
+                let source_needs_iretq = source_cs != 0x08;
+                let needs_iretq = target_needs_iretq || source_needs_iretq;
+
+                crate::serial_println!("[YIELD] target_needs_iretq={}, source_cs={:#x}, source_needs_iretq={}, needs_iretq={}",
+                                       target_needs_iretq, source_cs, source_needs_iretq, needs_iretq);
+
                 // Update TSS.rsp[0] if switching to a user-mode thread
-                let is_user_thread = new_kernel_stack.is_some();
-                crate::serial_println!("[YIELD] is_user_thread={}", is_user_thread);
                 if let Some(kernel_stack) = new_kernel_stack {
                     crate::serial_println!("[YIELD] About to set_kernel_stack({:#x})", kernel_stack);
                     crate::attunement::set_kernel_stack(kernel_stack);
@@ -503,10 +514,10 @@ pub fn yield_now() {
                 // Now do the context switch WITHOUT holding the lock
                 // Interrupts are still disabled by without_interrupts(), so this is safe
 
-                // CRITICAL: Use IRETQ-based switch for user-mode threads!
+                // CRITICAL: Use IRETQ-based switch if ANY privilege level change is needed!
                 // switch_context_cooperative uses RET which cannot change privilege levels
-                // switch_context uses IRETQ which properly transitions to ring 3
-                if is_user_thread {
+                // switch_context uses IRETQ which can transition between any rings
+                if needs_iretq {
                     // DEBUG: Check RSP before calling switch_context
                     unsafe {
                         core::arch::asm!("out dx, al", in("dx") 0x3f8u16, in("al") b'U', options(nomem, nostack, preserves_flags));

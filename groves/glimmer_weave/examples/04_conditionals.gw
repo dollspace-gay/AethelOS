@@ -1,0 +1,12 @@
+# Conditional execution
+#
+# Tests: should/then/otherwise/end
+# Expected output: "Large number"
+
+bind x to 42
+
+should x > 40 then
+    "Large number"
+otherwise
+    "Small number"
+end

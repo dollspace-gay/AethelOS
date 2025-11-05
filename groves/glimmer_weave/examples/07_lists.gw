@@ -1,0 +1,7 @@
+# List data structures
+#
+# Tests: list literals, indexing
+# Expected output: 20
+
+bind numbers to [10, 20, 30, 40]
+numbers[1]

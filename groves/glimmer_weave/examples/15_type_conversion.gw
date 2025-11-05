@@ -1,0 +1,56 @@
+# Glimmer-Weave Type Conversion Test
+# Tests the runtime library type conversion functions
+
+# Test: to_text
+bind number to 42
+bind number_text to to_text(number)
+# Expected: "42"
+
+bind truth to true
+bind truth_text to to_text(truth)
+# Expected: "true"
+
+# Test: to_number
+bind text to "123"
+bind parsed to to_number(text)
+# Expected: 123
+
+bind decimal_text to "3.14"
+bind pi to to_number(decimal_text)
+# Expected: 3.14
+
+bind bool_to_num to to_number(true)
+# Expected: 1
+
+# Test: to_truth (truthiness)
+bind zero to 0
+bind zero_truth to to_truth(zero)
+# Expected: false
+
+bind nonzero to 42
+bind nonzero_truth to to_truth(nonzero)
+# Expected: true
+
+bind empty to ""
+bind empty_truth to to_truth(empty)
+# Expected: false
+
+bind nonempty to "hello"
+bind nonempty_truth to to_truth(nonempty)
+# Expected: true
+
+# Test: type_of
+bind num_type to type_of(42)
+# Expected: "Number"
+
+bind text_type to type_of("hello")
+# Expected: "Text"
+
+bind list_type to type_of([1, 2, 3])
+# Expected: "List"
+
+bind map_type to type_of({x: 1})
+# Expected: "Map"
+
+# Return final result
+map_type

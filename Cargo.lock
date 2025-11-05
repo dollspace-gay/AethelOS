@@ -25,10 +25,18 @@ name = "corelib"
 version = "0.1.0"
 
 [[package]]
+name = "glimmer_weave"
+version = "0.1.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "heartwood"
 version = "0.1.0"
 dependencies = [
  "bitflags 1.3.2",
+ "glimmer_weave",
  "hmac-sha256",
  "lazy_static",
  "pic8259",
@@ -39,6 +47,13 @@ dependencies = [
 [[package]]
 name = "heartwood_loader"
 version = "0.1.0"
+
+[[package]]
+name = "hello"
+version = "0.1.0"
+dependencies = [
+ "corelib",
+]
 
 [[package]]
 name = "hmac-sha256"
@@ -58,6 +73,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "lock_api"
@@ -107,6 +128,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "test_service"
+version = "0.1.0"
+dependencies = [
+ "corelib",
 ]
 
 [[package]]

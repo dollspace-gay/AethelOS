@@ -498,6 +498,13 @@ fn execute_command(input: &str) {
         "permanence" => cmd_permanence(),  // Rune of Permanence (immutable structures)
         "fate" => cmd_fate(args),          // Concordance of Fates (RBAC)
         "test-user" => cmd_test_user(),    // Launch test user space program
+        "eval" => cmd_eval(args),          // Execute Glimmer-Weave script
+        "compile" => cmd_compile(args),    // Compile Glimmer-Weave to assembly
+        "elf" => cmd_elf(args),            // Generate ELF object file
+        // Grove (Ring 1 service) commands
+        "grove-list" => cmd_grove_list(),  // List all Ring 1 services
+        "grove-info" => cmd_grove_info(args), // Show service details
+        "grove-test" => cmd_grove_test(),  // Load test service
         // Filesystem commands (Eldarin naming)
         "reveal" => cmd_vfs_ls(args),      // vfs-ls → reveal
         "recite" => cmd_vfs_cat(args),     // vfs-cat → recite
@@ -577,6 +584,358 @@ fn cmd_clear() {
     crate::vga_buffer::clear_screen();
     crate::vga_buffer::print_banner();
     crate::println!();
+}
+
+/// The Eval Spell - Execute Glimmer-Weave script
+fn cmd_eval(script: &str) {
+    use glimmer_weave::{Lexer, Parser, Evaluator, Value};
+
+    if script.is_empty() {
+        crate::println!("◈ Glimmer-Weave Interpreter");
+        crate::println!();
+        crate::println!("  Usage: eval <script>");
+        crate::println!();
+        crate::println!("  Examples:");
+        crate::println!("    eval 2 + 3");
+        crate::println!("    eval bind x to 42");
+        crate::println!(r#"    eval should 5 > 3 then "yes" otherwise "no" end"#);
+        crate::println!();
+        crate::println!("  The living voice of AethelOS flows through your words...");
+        return;
+    }
+
+    // Tokenize
+    let mut lexer = Lexer::new(script);
+    let tokens = lexer.tokenize();
+
+    // Parse
+    let mut parser = Parser::new(tokens);
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(e) => {
+            crate::println!("⚠ Parse Error: {:?}", e);
+            return;
+        }
+    };
+
+    // Evaluate
+    let mut evaluator = Evaluator::new();
+    match evaluator.eval(&ast) {
+        Ok(result) => {
+            // Display result
+            match result {
+                Value::Number(n) => crate::println!("→ {}", n),
+                Value::Text(s) => crate::println!("→ \"{}\"", s),
+                Value::Truth(b) => crate::println!("→ {}", if b { "true" } else { "false" }),
+                Value::Nothing => crate::println!("→ nothing"),
+                Value::List(items) => {
+                    crate::print!("→ [");
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 { crate::print!(", "); }
+                        match item {
+                            Value::Number(n) => crate::print!("{}", n),
+                            Value::Text(s) => crate::print!("\"{}\"", s),
+                            Value::Truth(b) => crate::print!("{}", if *b { "true" } else { "false" }),
+                            _ => crate::print!("..."),
+                        }
+                    }
+                    crate::println!("]");
+                }
+                Value::Map(_) => crate::println!("→ {{...}}"),
+                Value::Chant { .. } => crate::println!("→ <chant>"),
+                Value::NativeChant(_) => crate::println!("→ <native chant>"),
+                Value::Capability { .. } => crate::println!("→ <capability>"),
+                Value::Range { .. } => crate::println!("→ <range>"),
+            }
+        }
+        Err(e) => {
+            crate::println!("⚠ Runtime Error: {:?}", e);
+        }
+    }
+}
+
+/// The Compile Spell - Compile Glimmer-Weave to x86-64 assembly
+fn cmd_compile(script: &str) {
+    use glimmer_weave::{Lexer, Parser, compile_to_asm};
+
+    if script.is_empty() {
+        crate::println!("◈ Glimmer-Weave Compiler");
+        crate::println!();
+        crate::println!("  Usage: compile <script>");
+        crate::println!();
+        crate::println!("  Compiles Glimmer-Weave to x86-64 assembly (AT&T syntax)");
+        crate::println!();
+        crate::println!("  Examples:");
+        crate::println!("    compile 2 + 3");
+        crate::println!("    compile bind x to 42");
+        crate::println!();
+        crate::println!("  The Runic Forge transforms intent into machine code...");
+        return;
+    }
+
+    // Tokenize
+    let mut lexer = Lexer::new(script);
+    let tokens = lexer.tokenize();
+
+    // Parse
+    let mut parser = Parser::new(tokens);
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(e) => {
+            crate::println!("⚠ Parse Error: {:?}", e);
+            return;
+        }
+    };
+
+    // Compile to assembly
+    match compile_to_asm(&ast) {
+        Ok(asm) => {
+            crate::println!("◈ Generated Assembly:");
+            crate::println!();
+            // Print assembly line by line
+            for line in asm.lines() {
+                crate::println!("{}", line);
+            }
+        }
+        Err(e) => {
+            crate::println!("⚠ Compilation Error: {}", e);
+        }
+    }
+}
+
+/// The ELF Spell - Generate ELF object file from Glimmer-Weave
+fn cmd_elf(name: &str) {
+    use glimmer_weave::{ElfBuilder};
+
+    if name.is_empty() {
+        crate::println!("◈ ELF Object Generator");
+        crate::println!();
+        crate::println!("  Usage: elf <function_name>");
+        crate::println!();
+        crate::println!("  Generates an ELF64 object file with test code");
+        crate::println!();
+        crate::println!("  Examples:");
+        crate::println!("    elf test_function");
+        crate::println!("    elf main");
+        crate::println!();
+        crate::println!("  The Runic Forge weaves machine code into eternal form...");
+        return;
+    }
+
+    // Create test machine code (simple function that returns 42)
+    // mov $42, %eax
+    // ret
+    let code: [u8; 6] = [
+        0x48, 0xc7, 0xc0, 0x2a, 0x00, 0x00,  // mov $42, %rax
+    ];
+
+    // Build ELF object file
+    let mut builder = ElfBuilder::new();
+    builder.add_text(&code);
+    builder.add_function(name, 0, code.len() as u64);
+    let elf_bytes = builder.build();
+
+    crate::println!("◈ ELF Object File Generated");
+    crate::println!();
+    crate::println!("  Function: {}", name);
+    crate::println!("  Code size: {} bytes", code.len());
+    crate::println!("  ELF size: {} bytes", elf_bytes.len());
+    crate::println!();
+    crate::println!("  ELF Magic: {:02X} {:02X} {:02X} {:02X}",
+                     elf_bytes[0], elf_bytes[1], elf_bytes[2], elf_bytes[3]);
+    crate::println!();
+    crate::println!("  Sections:");
+    crate::println!("    .text (executable code)");
+    crate::println!("    .data (initialized data)");
+    crate::println!("    .bss (uninitialized data)");
+    crate::println!("    .symtab (symbol table)");
+    crate::println!("    .strtab (string table)");
+    crate::println!("    .shstrtab (section header string table)");
+    crate::println!();
+    crate::println!("  ✓ ELF object file successfully generated");
+}
+
+/// Grove Commands - Ring 1 Service Management
+
+/// The Grove List Spell - Show all registered Ring 1 services
+fn cmd_grove_list() {
+    use crate::groves::manager::get_grove_manager;
+    use crate::groves::service::ServiceState;
+
+    crate::println!("◈ Ring 1 Services (Groves)");
+    crate::println!();
+
+    let manager = get_grove_manager().lock();
+    let service_count = manager.service_count();
+
+    if service_count == 0 {
+        crate::println!("  No services currently loaded.");
+        crate::println!();
+        crate::println!("  Use 'grove-test' to load a test service.");
+        return;
+    }
+
+    crate::println!("  {} service(s) registered:", service_count);
+    crate::println!();
+
+    for service in manager.all_services() {
+        let state_symbol = match service.state {
+            ServiceState::Loading => "⌛",
+            ServiceState::Running => "✓",
+            ServiceState::Stopped => "⏸",
+            ServiceState::Faulted => "✗",
+        };
+
+        crate::println!("  {} {} (ID: {:?})", state_symbol, service.name, service.id);
+        crate::println!("     State: {:?}", service.state);
+        crate::println!("     Memory: {} bytes / {} MB limit",
+                        service.memory_used,
+                        service.limits.max_memory / (1024 * 1024));
+        crate::println!("     Threads: {} / {} limit",
+                        service.thread_count,
+                        service.limits.max_threads);
+        crate::println!("     Capabilities: {} granted", service.capabilities.len());
+        crate::println!();
+    }
+}
+
+/// The Grove Info Spell - Show detailed information about a service
+fn cmd_grove_info(name: &str) {
+    use crate::groves::manager::get_grove_manager;
+
+    if name.is_empty() {
+        crate::println!("◈ Grove Info");
+        crate::println!();
+        crate::println!("  Usage: grove-info <service_name>");
+        crate::println!();
+        crate::println!("  Examples:");
+        crate::println!("    grove-info world-tree");
+        crate::println!("    grove-info runic-forge");
+        return;
+    }
+
+    let manager = get_grove_manager().lock();
+
+    match manager.find_service_by_name(name) {
+        Some(service) => {
+            crate::println!("◈ Service: {}", service.name);
+            crate::println!();
+            crate::println!("  ID: {:?}", service.id);
+            crate::println!("  State: {:?}", service.state);
+            crate::println!("  Vessel: {:?}", service.vessel_id);
+            crate::println!("  Main Thread: {:?}", service.main_thread_id);
+            crate::println!();
+            crate::println!("  Resource Usage:");
+            crate::println!("    CPU Time: {} ns", service.cpu_time_used);
+            crate::println!("    Memory: {} bytes (max: {} MB)",
+                            service.memory_used,
+                            service.limits.max_memory / (1024 * 1024));
+            crate::println!("    Threads: {} (max: {})",
+                            service.thread_count,
+                            service.limits.max_threads);
+            crate::println!("    CPU Limit: {}%", service.limits.max_cpu_percent);
+            crate::println!();
+            crate::println!("  Capabilities ({} granted):", service.capabilities.len());
+            for cap in &service.capabilities {
+                crate::println!("    • {:?}", cap);
+            }
+            crate::println!();
+            crate::println!("  Respawn Policy: {:?}", service.respawn_policy);
+            if service.crash_count > 0 {
+                crate::println!("  Crash Count: {}", service.crash_count);
+            }
+            crate::println!();
+            crate::println!("  IPC Statistics:");
+            crate::println!("    Messages Sent: {}", service.ipc_messages_sent);
+            crate::println!("    Messages Received: {}", service.ipc_messages_received);
+        }
+        None => {
+            crate::println!("⚠ Service '{}' not found", name);
+            crate::println!();
+            crate::println!("Use 'grove-list' to see all registered services.");
+        }
+    }
+}
+
+/// The Grove Test Spell - Start a real Ring 1 service
+fn cmd_grove_test() {
+    use crate::groves::lifecycle::{ServiceConfig, load_service, start_service, ring1_test_service};
+    use crate::groves::service::{ServiceCapability, ResourceLimits, RespawnPolicy};
+    use crate::loom_of_fate::ThreadPriority;
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
+
+    crate::println!("◈ Grove Test - Starting Ring 1 Service");
+    crate::println!();
+    crate::println!("  This will create a REAL Ring 1 thread running at CPL=1!");
+    crate::println!();
+
+    // Allocate a stack for the Ring 1 service (16 KB)
+    const STACK_SIZE: usize = 16384;
+    let stack: Vec<u8> = alloc::vec![0u8; STACK_SIZE];
+    let stack_bottom = stack.as_ptr() as u64;
+
+    // Align stack_top to 16 bytes (x86-64 ABI requirement)
+    // For thread entry via iretq, RSP should be 16-byte aligned
+    let stack_top = (stack_bottom + STACK_SIZE as u64) & !0xF;
+
+    // Leak the stack so it persists after this function returns
+    // (The Ring 1 thread will use it)
+    core::mem::forget(stack);
+
+    crate::println!("  Allocated Ring 1 stack: {:#x} - {:#x}", stack_bottom, stack_top);
+    crate::println!("  Entry point: ring1_test_service");
+    crate::println!("  Ring 1 segments already loaded in GDT during init");
+    crate::println!();
+
+    // Create service configuration with REAL entry point and stack
+    // Ring 1 services use page_table_phys: 0 to indicate "use kernel CR3"
+    let config = ServiceConfig {
+        name: "ring1-test".to_string(),
+        entry_point: ring1_test_service as u64,  // REAL function!
+        stack_top,                                 // REAL stack!
+        page_table_phys: 0,  // 0 = Use kernel's CR3 (Ring 1 services share kernel address space)
+        priority: ThreadPriority::Normal,
+        capabilities: alloc::vec![
+            ServiceCapability::MemoryManage,
+            ServiceCapability::IpcReceive,
+        ],
+        limits: ResourceLimits {
+            max_memory: 16 * 1024 * 1024,
+            max_threads: 4,
+            max_cpu_percent: 25,
+            max_file_handles: 32,
+            max_ipc_rate: 1000,
+        },
+        respawn_policy: RespawnPolicy::OnFailure,
+    };
+
+    crate::println!("  Loading service...");
+    match load_service(config) {
+        Ok(service_id) => {
+            crate::println!("  ✓ Service loaded (ID: {:?})", service_id);
+            crate::println!();
+            crate::println!("  Starting Ring 1 thread...");
+
+            match start_service(service_id) {
+                Ok(()) => {
+                    crate::println!("  ✓ Ring 1 service is now RUNNING!");
+                    crate::println!();
+                    crate::println!("  The thread is running at Ring 1 (CPL=1).");
+                    crate::println!("  Check serial.log to see it running.");
+                    crate::println!();
+                    crate::println!("  Use 'grove-list' to see the service");
+                    crate::println!("  Use 'grove-info ring1-test' for details");
+                }
+                Err(e) => {
+                    crate::println!("  ⚠ Failed to start service: {:?}", e);
+                }
+            }
+        }
+        Err(e) => {
+            crate::println!("  ⚠ Failed to load service: {:?}", e);
+        }
+    }
 }
 
 /// The Help Spell - Show available commands

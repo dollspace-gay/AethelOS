@@ -88,6 +88,25 @@ impl UserAddressSpace {
         })
     }
 
+    /// Create an empty address space for Ring 1 services
+    ///
+    /// Ring 1 services run in the kernel's address space (CR3) but at CPL=1.
+    /// This creates a placeholder UserAddressSpace with pml4_phys = 0, which
+    /// tells the context switch code to NOT change CR3.
+    ///
+    /// # Returns
+    /// An empty UserAddressSpace with no page table allocation
+    pub fn empty() -> Self {
+        crate::serial_println!("[USER_SPACE] Created empty address space for Ring 1 service (uses kernel CR3)");
+
+        Self {
+            pml4_phys: PhysAddr::new(0), // 0 means "use kernel's CR3"
+            regions: Vec::new(),
+            heap_break: VirtAddr::new(0x0000_0000_0040_0000),
+            next_stack: VirtAddr::new(USER_STACK_TOP),
+        }
+    }
+
     pub fn add_region(&mut self, region: MemoryRegion) -> Result<(), &'static str> {
         for existing in &self.regions {
             if existing.overlaps(&region) {

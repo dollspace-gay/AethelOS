@@ -1,0 +1,10 @@
+# Variable bindings: immutable and mutable
+#
+# Tests: bind (immutable), weave (mutable), set (mutation)
+# Expected output: 15
+
+bind x to 10
+weave counter as 0
+
+set counter to 5
+x + counter

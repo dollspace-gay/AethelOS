@@ -1,0 +1,46 @@
+# Glimmer-Weave Math Functions Test
+# Tests the runtime library math operations
+
+# Test: abs (absolute value)
+bind negative to -42
+bind positive to abs(negative)
+# Expected: 42
+
+# Test: sqrt (square root)
+bind number to 16
+bind root to sqrt(number)
+# Expected: 4
+
+# Test: pow (power)
+bind base to 2
+bind exponent to 8
+bind power to pow(base, exponent)
+# Expected: 256
+
+# Test: min and max
+bind a to 10
+bind b to 20
+bind minimum to min(a, b)
+# Expected: 10
+
+bind maximum to max(a, b)
+# Expected: 20
+
+# Test: floor, ceil, round
+bind pi to 3.14159
+
+bind floored to floor(pi)
+# Expected: 3
+
+bind ceiled to ceil(pi)
+# Expected: 4
+
+bind rounded to round(pi)
+# Expected: 3
+
+# Test: combining functions
+bind complex to sqrt(pow(3, 2) + pow(4, 2))
+# Expected: 5 (Pythagorean theorem: 3² + 4² = 5²)
+
+# Return final result
+complex

@@ -284,6 +284,13 @@ impl Scheduler {
             let from_ctx_ptr = &mut self.threads[from_idx].context as *mut ThreadContext;
             let to_ctx_ptr = &self.threads[to_idx].context as *const ThreadContext;
 
+            // DEBUG: Check CS value of target thread
+            crate::serial_println!("[SCHED] Switching from thread {} (CS={:#x}) to thread {} (CS={:#x})",
+                                   current_id.0,
+                                   self.threads[from_idx].context.cs,
+                                   next_id.0,
+                                   self.threads[to_idx].context.cs);
+
             // Update The Weaver's Sigil (stack canary) for the new thread
             // SECURITY: This MUST happen before the context switch so that
             // LLVM-generated code in the new thread uses the correct canary

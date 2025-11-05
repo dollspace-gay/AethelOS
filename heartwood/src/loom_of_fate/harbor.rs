@@ -81,6 +81,50 @@ impl Harbor {
         beacon
     }
 
+    /// Moor a Ring 1 service Vessel (privileged service in kernel address space)
+    ///
+    /// Ring 1 services run at CPL=1 but share the kernel's address space (CR3).
+    /// They have separate stacks and capabilities but don't get isolated page tables.
+    ///
+    /// # Arguments
+    /// * `parent` - Parent VesselId (usually None for system services)
+    /// * `entry_point` - Service entry point address
+    /// * `kernel_stack` - Top of kernel stack for privilege transitions
+    /// * `main_thread` - ThreadId of the main thread
+    /// * `fate` - RBAC role from Concordance
+    ///
+    /// # Returns
+    /// The VesselId of the newly created Ring 1 service Vessel
+    pub fn moor_service_vessel(
+        &mut self,
+        parent: Option<VesselId>,
+        entry_point: u64,
+        kernel_stack: u64,
+        main_thread: ThreadId,
+        fate: String,
+    ) -> VesselId {
+        let beacon = VesselId(self.next_beacon_id);
+        self.next_beacon_id += 1;
+
+        // Ring 1 services use an EMPTY address space marker (no isolated page tables)
+        // They share the kernel's address space, indicated by page_table_phys = 0
+        let address_space = crate::mana_pool::UserAddressSpace::empty();
+
+        let vessel = Vessel::new(
+            beacon,
+            parent,
+            address_space,
+            0, // page_table_phys = 0 means "use kernel's CR3"
+            entry_point,
+            kernel_stack,
+            main_thread,
+            fate,
+        );
+
+        self.vessels.push(vessel);
+        beacon
+    }
+
     /// Moor a new user-mode Vessel from an ELF binary
     ///
     /// This creates a user-mode Vessel with proper address space isolation.

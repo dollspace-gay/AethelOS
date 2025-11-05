@@ -1,0 +1,12 @@
+# Loop iteration
+#
+# Tests: for each/in/then/end with ranges and lists
+# Expected output: 10 (sum of 1+2+3+4)
+
+weave sum as 0
+
+for each i in range(1, 5) then
+    set sum to sum + i
+end
+
+sum

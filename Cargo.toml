@@ -1,12 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
+	"user_programs/hello",
+	"user_programs/test_service",
     "heartwood",
     "awakening/heartwood_loader",
     "groves/world-tree_grove",
     "groves/the-weave_grove",
     "groves/lanthir_grove",
     "groves/network_sprite",
+    "groves/glimmer_weave",
     "ancient-runes/corelib",
     "ancient-runes/weaving",
     "ancient-runes/script",

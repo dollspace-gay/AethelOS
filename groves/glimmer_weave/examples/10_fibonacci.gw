@@ -1,0 +1,14 @@
+# Fibonacci sequence using recursion
+#
+# Tests: complex recursion, multiple recursive calls
+# Expected output: 55 (fib(10))
+
+chant fib(n) then
+    should n <= 1 then
+        yield n
+    otherwise
+        yield fib(n - 1) + fib(n - 2)
+    end
+end
+
+fib(10)

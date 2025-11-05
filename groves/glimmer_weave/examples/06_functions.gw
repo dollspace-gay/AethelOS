@@ -1,0 +1,14 @@
+# Function definitions
+#
+# Tests: chant/then/yield/end
+# Expected output: 30
+
+chant add(a, b) then
+    yield a + b
+end
+
+chant multiply(x, y) then
+    yield x * y
+end
+
+add(multiply(5, 4), 10)

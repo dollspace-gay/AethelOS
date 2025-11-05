@@ -1,0 +1,50 @@
+# Glimmer-Weave Map Functions Test
+# Tests the runtime library map operations
+
+# Test: create a map
+bind person to {
+    name: "Elara",
+    age: 42,
+    role: "Weaver"
+}
+
+# Test: map_size
+bind size to map_size(person)
+# Expected: 3
+
+# Test: map_keys
+bind keys to map_keys(person)
+# Expected: ["name", "age", "role"]
+
+# Test: map_values
+bind values to map_values(person)
+# Expected: ["Elara", 42, "Weaver"]
+
+# Test: map_has
+bind has_name to map_has(person, "name")
+# Expected: true
+
+bind has_email to map_has(person, "email")
+# Expected: false
+
+# Test: accessing map values
+bind person_name to person.name
+# Expected: "Elara"
+
+bind person_age to person.age
+# Expected: 42
+
+# Test: nested maps
+bind world to {
+    realm: "AethelOS",
+    inhabitants: {
+        weavers: 100,
+        seekers: 50
+    }
+}
+
+bind realm_name to world.realm
+# Expected: "AethelOS"
+
+# Return final result
+realm_name

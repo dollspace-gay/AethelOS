@@ -157,7 +157,7 @@ impl ThreadContext {
             // Special registers for RING 1 (privileged service)
             rip: entry_point,
             cs: 0x28 | 1,  // Service code segment (GDT index 5) | RPL=1
-            rflags: 0x202,  // Interrupts enabled (IF flag set)
+            rflags: 0x1202,  // IF (bit 9) + IOPL=1 (bits 12-13) + Reserved bit 1
             rsp: service_stack_top,  // Service stack (must be 16-byte aligned)
             ss: 0x30 | 1,  // Service data segment (GDT index 6) | RPL=1
             cr3: page_table_phys,  // Service's page table (isolated address space)
@@ -308,16 +308,83 @@ pub unsafe extern "C" fn switch_context(_old_context: *mut ThreadContext, _new_c
         "push qword ptr [rsi + 0x80]",  // CS
         "push qword ptr [rsi + 0x78]",  // RIP
 
-        // Check if we're switching to ring 3 (CS & 3 != 0)
+        // DEBUG: Output CS value to serial port
+        "push rdx",
+        "push rax",
+        "mov rdx, 0x3f8",
+        "mov al, '<'",
+        "out dx, al",
+        "mov al, 'C'",
+        "out dx, al",
+        "mov al, 'S'",
+        "out dx, al",
+        "mov al, '='",
+        "out dx, al",
+        "mov rax, [rsi + 0x80]",       // Load CS value
+        "mov al, ah",                   // Get high byte
+        "shr al, 4",
+        "add al, '0'",
+        "cmp al, '9'",
+        "jle 2f",
+        "add al, 7",                    // Convert to A-F
+        "2:",
+        "out dx, al",
+        "mov rax, [rsi + 0x80]",
+        "mov al, ah",
+        "and al, 0x0F",
+        "add al, '0'",
+        "cmp al, '9'",
+        "jle 2f",
+        "add al, 7",
+        "2:",
+        "out dx, al",
+        "mov rax, [rsi + 0x80]",
+        "and al, 0xF0",
+        "shr al, 4",
+        "add al, '0'",
+        "cmp al, '9'",
+        "jle 2f",
+        "add al, 7",
+        "2:",
+        "out dx, al",
+        "mov rax, [rsi + 0x80]",
+        "and al, 0x0F",
+        "add al, '0'",
+        "cmp al, '9'",
+        "jle 2f",
+        "add al, 7",
+        "2:",
+        "out dx, al",
+        "mov al, '>'",
+        "out dx, al",
+        "pop rax",
+        "pop rdx",
+
+        // Check if we're switching to ring 3 (CS & 3 == 3)
+        // NOTE: We do NOT swapgs for Ring 1! Ring 1 services need per-CPU data.
         "mov rax, [rsi + 0x80]",        // Load CS value
-        "test al, 3",                    // Check RPL bits
-        "jz 3f",                         // Skip swapgs if ring 0
+        "and al, 3",                     // Mask RPL bits
+        "cmp al, 3",                     // Check if RPL == 3 (Ring 3)
+        "jne 3f",                        // Skip swapgs if not Ring 3
 
         // Switching to ring 3: Execute swapgs to set up GS for userspace
         // After swapgs: GsBase = 0 (user), KernelGsBase = per-CPU (for syscall)
         "swapgs",
 
         "3:",  // Continue to iretq
+
+        // DEBUG: Mark right before iretq
+        "push rdx",
+        "push rax",
+        "mov rdx, 0x3f8",
+        "mov al, '>'",
+        "out dx, al",
+        "mov al, '>'",
+        "out dx, al",
+        "mov al, 'Q'",
+        "out dx, al",
+        "pop rax",
+        "pop rdx",
 
         // Restore remaining registers
         "mov rdi, [rsi + 0x70]",

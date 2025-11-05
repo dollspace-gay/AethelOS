@@ -12,6 +12,7 @@ lazy_static = { workspace = true }
 x86_64 = { workspace = true }
 pic8259 = { workspace = true }
 hmac-sha256 = { version = "1.1", default-features = false, features = ["opt_size"] }
+glimmer_weave = { path = "../groves/glimmer_weave" }
 # volatile = { workspace = true }
 # uart_16550 = { workspace = true }
 # bootloader = { workspace = true }

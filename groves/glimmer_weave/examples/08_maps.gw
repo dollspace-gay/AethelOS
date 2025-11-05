@@ -1,0 +1,12 @@
+# Map data structures
+#
+# Tests: map literals, field access
+# Expected output: "Elara"
+
+bind person to {
+    name: "Elara",
+    age: 42,
+    role: "Weaver"
+}
+
+person.name

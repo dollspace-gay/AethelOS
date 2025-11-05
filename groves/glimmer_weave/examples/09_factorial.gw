@@ -1,0 +1,14 @@
+# Factorial using recursion
+#
+# Tests: recursive function calls
+# Expected output: 120 (5!)
+
+chant factorial(n) then
+    should n <= 1 then
+        yield 1
+    otherwise
+        yield n * factorial(n - 1)
+    end
+end
+
+factorial(5)

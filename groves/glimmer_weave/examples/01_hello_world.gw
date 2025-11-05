@@ -1,0 +1,6 @@
+# Hello World in Glimmer-Weave
+#
+# Expected output: "Hello, World!"
+
+bind message to "Hello, World!"
+message

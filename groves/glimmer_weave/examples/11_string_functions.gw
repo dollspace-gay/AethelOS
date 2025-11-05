@@ -1,0 +1,52 @@
+# Glimmer-Weave String Functions Test
+# Tests the runtime library string operations
+
+# Test: length
+bind greeting to "Hello, World!"
+bind len to length(greeting)
+# Expected: 13
+
+# Test: upper and lower
+bind upper_text to upper("hello")
+# Expected: "HELLO"
+
+bind lower_text to lower("WORLD")
+# Expected: "world"
+
+# Test: concat
+bind first to "Hello"
+bind second to " World"
+bind combined to concat(first, second)
+# Expected: "Hello World"
+
+# Test: slice
+bind text to "Glimmer-Weave"
+bind sub to slice(text, 0, 7)
+# Expected: "Glimmer"
+
+# Test: split and join
+bind sentence to "one,two,three"
+bind parts to split(sentence, ",")
+# Expected: ["one", "two", "three"]
+
+bind rejoined to join(parts, "-")
+# Expected: "one-two-three"
+
+# Test: trim
+bind padded to "  hello  "
+bind trimmed to trim(padded)
+# Expected: "hello"
+
+# Test: starts_with, ends_with, contains
+bind word to "AethelOS"
+bind starts to starts_with(word, "Aethel")
+# Expected: true
+
+bind ends to ends_with(word, "OS")
+# Expected: true
+
+bind has to contains(word, "the")
+# Expected: true
+
+# Return final result
+trimmed

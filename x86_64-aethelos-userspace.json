@@ -20,7 +20,8 @@
   "static-position-independent-executables": false,
   "supports-stack-protector": true,
   "stack-probes": {
-    "kind": "inline-or-call"
+    "kind": "inline-or-call",
+    "min-llvm-version-for-inline": [11, 0, 1]
   },
   "eh-frame-header": false,
   "pre-link-args": {

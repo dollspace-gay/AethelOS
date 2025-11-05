@@ -1,0 +1,98 @@
+# Glimmer-Weave Comprehensive Runtime Test
+# Combines multiple runtime library functions
+
+# String processing pipeline
+bind input to "  AethelOS  "
+bind cleaned to trim(input)
+bind lowercase to lower(cleaned)
+bind uppercase to upper(lowercase)
+bind final_text to concat(uppercase, " Rocks!")
+# Expected: "AETHELOS Rocks!"
+
+# Math computation
+bind x to 3
+bind y to 4
+bind hypotenuse to sqrt(pow(x, 2) + pow(y, 2))
+bind rounded_result to round(hypotenuse)
+# Expected: 5
+
+# List manipulation
+bind raw_numbers to [5, 3, 8, 1, 9]
+bind numbers_length to list_length(raw_numbers)
+bind first_num to list_first(raw_numbers)
+bind last_num to list_last(raw_numbers)
+bind reversed_nums to list_reverse(raw_numbers)
+# Expected: [9, 1, 8, 3, 5]
+
+# String splitting and joining
+bind csv to "apple,banana,cherry"
+bind fruits to split(csv, ",")
+bind fruit_count to list_length(fruits)
+bind first_fruit to list_first(fruits)
+bind spaced to join(fruits, " | ")
+# Expected: "apple | banana | cherry"
+
+# Map operations
+bind config to {
+    version: "0.1.0",
+    name: "AethelOS",
+    threads: 4
+}
+
+bind config_keys to map_keys(config)
+bind config_size to map_size(config)
+bind has_version to map_has(config, "version")
+bind os_name to config.name
+# Expected: "AethelOS"
+
+# Type introspection
+bind num to 42
+bind text to "hello"
+bind list to [1, 2, 3]
+
+bind num_type to type_of(num)
+bind text_type to type_of(text)
+bind list_type to type_of(list)
+# Expected: "Number", "Text", "List"
+
+# Type conversion chain
+bind original to 123
+bind as_text to to_text(original)
+bind text_length to length(as_text)
+bind back_to_num to to_number(as_text)
+bind is_truthy to to_truth(back_to_num)
+# Expected: true
+
+# Complex string manipulation
+bind phrase to "The Loom of Fate weaves eternal threads"
+bind has_loom to contains(phrase, "Loom")
+bind starts_the to starts_with(phrase, "The")
+bind ends_threads to ends_with(phrase, "threads")
+bind first_word to slice(phrase, 0, 3)
+# Expected: "The"
+
+# Nested data structures
+bind system to {
+    kernel: {
+        name: "Heartwood",
+        version: "0.1.0"
+    },
+    services: ["Loom", "Mana Pool", "World-Tree"]
+}
+
+bind kernel_name to system.kernel.name
+bind service_count to list_length(system.services)
+bind first_service to list_first(system.services)
+# Expected: "Loom"
+
+# Return the final comprehensive result
+bind result to {
+    text_result: final_text,
+    math_result: rounded_result,
+    list_result: reversed_nums,
+    string_result: spaced,
+    type_check: is_truthy,
+    kernel: kernel_name
+}
+
+result

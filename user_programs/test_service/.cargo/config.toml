@@ -1,0 +1,8 @@
+[build]
+target = "../../x86_64-aethelos-userspace.json"
+
+[target.x86_64-aethelos-userspace]
+rustflags = [
+    "-C", "link-arg=-T../../userspace.ld",
+    "-C", "relocation-model=pic",
+]

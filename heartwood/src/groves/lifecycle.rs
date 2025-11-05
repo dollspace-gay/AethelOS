@@ -59,21 +59,29 @@ pub fn load_service(config: ServiceConfig) -> Result<ServiceId, GroveError> {
     // (we'll create the actual thread after we have the Vessel)
     let temp_thread_id = ThreadId(0);
 
-    // Create a new Vessel for this service in the Harbor
-    // NOTE: Currently using moor_vessel() which creates a basic Vessel
-    // In a full implementation, this would use moor_service_vessel() with ELF loading
+    // Create a Ring 1 service Vessel in the Harbor
+    // Ring 1 services use moor_service_vessel() which shares the kernel's CR3
+    // instead of creating an isolated address space
     let vessel_id = {
         let mut harbor = loom_of_fate::get_harbor().lock();
-        harbor.moor_vessel(
+        harbor.moor_service_vessel(
             None, // No parent for top-level services
-            config.page_table_phys,
+            config.entry_point,
             config.stack_top, // Use stack top as kernel_stack for now
             temp_thread_id,
             config.name.clone(), // Use service name as "fate" (RBAC role)
         )
     };
 
-    crate::serial_println!("[Lifecycle] Created Vessel {:?} for service '{}'", vessel_id, config.name);
+    crate::serial_println!("[Lifecycle] Created Ring 1 Vessel {:?} for service '{}' (uses kernel CR3)", vessel_id, config.name);
+
+    // Set up Ring 1 stack in TSS before creating the service thread
+    // When CPU transitions from Ring 0 to Ring 1, it loads RSP from TSS.rsp[1]
+    unsafe {
+        let tss = crate::attunement::gdt::get_tss_mut();
+        tss.set_service_stack(config.stack_top);
+        crate::serial_println!("[Lifecycle] Set Ring 1 stack in TSS: {:#x}", config.stack_top);
+    }
 
     // Create the main service thread
     let thread_id = loom_of_fate::create_service_thread(
@@ -359,5 +367,38 @@ pub fn list_services() {
             service.memory_used / 1024,
             service.thread_count
         );
+    }
+}
+
+/// Simple Ring 1 test service entry point
+///
+/// This function runs at Ring 1 (CPL=1) and demonstrates privilege level separation.
+/// It loops forever, yielding cooperatively to the scheduler via INT 0x81 syscalls.
+///
+/// NOTE: This runs in kernel address space but at Ring 1 privilege level.
+/// Ring 1 services use INT 0x81 for system calls instead of direct function calls.
+pub fn ring1_test_service() -> ! {
+    let mut counter = 0u64;
+
+    loop {
+        counter += 1;
+
+        // Log every 1000000 iterations to avoid spamming
+        if counter % 1000000 == 0 {
+            crate::serial_println!("[Ring1Test] Running at CPL=1! Counter: {} (yielding...)", counter);
+
+            // Yield to other threads via INT 0x81 syscall
+            // Register convention:
+            //   RAX = syscall number (0 = SYS_YIELD)
+            //   No arguments needed for yield
+            unsafe {
+                core::arch::asm!(
+                    "mov rax, 0",   // SYS_YIELD = 0
+                    "int 0x81",     // Ring 1 syscall interrupt
+                    out("rax") _,   // Result ignored for yield
+                    options(nomem, preserves_flags)
+                );
+            }
+        }
     }
 }

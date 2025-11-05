@@ -1,0 +1,40 @@
+# Glimmer-Weave List Functions Test
+# Tests the runtime library list operations
+
+# Test: list_length
+bind numbers to [1, 2, 3, 4, 5]
+bind count to list_length(numbers)
+# Expected: 5
+
+# Test: list_first and list_last
+bind first to list_first(numbers)
+# Expected: 1
+
+bind last to list_last(numbers)
+# Expected: 5
+
+# Test: list_push
+bind extended to list_push(numbers, 6)
+# Expected: [1, 2, 3, 4, 5, 6]
+
+# Test: list_pop
+bind shortened to list_pop(extended)
+# Expected: [1, 2, 3, 4, 5]
+
+# Test: list_reverse
+bind reversed to list_reverse(numbers)
+# Expected: [5, 4, 3, 2, 1]
+
+# Test: nested list operations
+bind matrix to [[1, 2], [3, 4], [5, 6]]
+bind matrix_length to list_length(matrix)
+# Expected: 3
+
+bind first_row to list_first(matrix)
+# Expected: [1, 2]
+
+bind first_elem to list_first(first_row)
+# Expected: 1
+
+# Return final result
+first_elem

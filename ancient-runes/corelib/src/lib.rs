@@ -76,6 +76,9 @@ pub mod result {
     }
 }
 
+/// Syscall interface for communicating with the kernel
+pub mod syscalls;
+
 /// Re-exports for convenience
 pub use collections::*;
 pub use strings::*;

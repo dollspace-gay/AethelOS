@@ -97,7 +97,7 @@ impl GdtEntry {
             limit_low: 0xFFFF,
             base_low: 0,
             base_middle: 0,
-            access: 0b10101010,  // Present, Ring 1, Code, Execute/Read
+            access: 0b10111010,  // P=1, DPL=01(Ring1), S=1(code/data), E=1(exec), DC=0, RW=1(readable), A=0
             granularity: 0b10101111,  // 4KB granularity, 64-bit, limit high = 0xF
             base_high: 0,
         }
@@ -110,7 +110,7 @@ impl GdtEntry {
             limit_low: 0xFFFF,
             base_low: 0,
             base_middle: 0,
-            access: 0b10100010,  // Present, Ring 1, Data, Read/Write
+            access: 0b10110010,  // P=1, DPL=01(Ring1), S=1(code/data), E=0(data), DC=0, RW=1(writable), A=0
             granularity: 0b10001111,  // 4KB granularity, 64-bit (D/B=0), limit high = 0xF
             base_high: 0,
         }
@@ -222,29 +222,51 @@ impl GlobalDescriptorTable {
         self.len = 1;  // Reset to just null descriptor
 
         // Add kernel code segment (index 1, selector 0x08)
+        let idx = self.len;
         self.entries[self.len] = GdtEntry::kernel_code();
+        crate::serial_println!("[GDT INIT] Added kernel_code at index {}", idx);
         self.len += 1;
 
         // Add kernel data segment (index 2, selector 0x10)
+        let idx = self.len;
         self.entries[self.len] = GdtEntry::kernel_data();
+        crate::serial_println!("[GDT INIT] Added kernel_data at index {}", idx);
         self.len += 1;
 
         // === FIX: User segments must be in order SS, then CS for sysret ===
         // Add user data segment (index 3, selector 0x18) - Used as SS by sysret
+        let idx = self.len;
         self.entries[self.len] = GdtEntry::user_data();
+        crate::serial_println!("[GDT INIT] Added user_data at index {}", idx);
         self.len += 1;
 
         // Add user code segment (index 4, selector 0x20) - Used as CS by sysret
         // sysret requires: CS selector = SS selector + 8
+        let idx = self.len;
         self.entries[self.len] = GdtEntry::user_code();
+        crate::serial_println!("[GDT INIT] Added user_code at index {}", idx);
         self.len += 1;
 
         // Add service code segment (index 5, selector 0x28) - Ring 1 for Groves
-        self.entries[self.len] = GdtEntry::service_code();
+        let service_code = GdtEntry::service_code();
+        let service_code_value = unsafe { core::mem::transmute::<GdtEntry, u64>(service_code) };
+        let idx = self.len;
+        self.entries[self.len] = service_code;
+        crate::serial_println!("[GDT INIT] Added service_code at index {} = {:#018x}",
+            idx,
+            service_code_value
+        );
         self.len += 1;
 
         // Add service data segment (index 6, selector 0x30) - Ring 1 for Groves
-        self.entries[self.len] = GdtEntry::service_data();
+        let service_data = GdtEntry::service_data();
+        let service_data_value = unsafe { core::mem::transmute::<GdtEntry, u64>(service_data) };
+        let idx = self.len;
+        self.entries[self.len] = service_data;
+        crate::serial_println!("[GDT INIT] Added service_data at index {} = {:#018x}",
+            idx,
+            service_data_value
+        );
         self.len += 1;
 
         // Add TSS (takes 2 entries in 64-bit mode, indices 7-8)
@@ -257,10 +279,17 @@ impl GlobalDescriptorTable {
 
     /// Load the GDT and reload segment registers
     pub fn load(&'static self) {
+        let len = self.len;
+        let base_addr = self.entries.as_ptr() as u64;
+        let limit_val = (len * size_of::<GdtEntry>() - 1) as u16;
+
         let ptr = GdtPointer {
-            limit: (self.len * size_of::<GdtEntry>() - 1) as u16,
-            base: self.entries.as_ptr() as u64,
+            limit: limit_val,
+            base: base_addr,
         };
+
+        crate::serial_println!("[GDT LOAD] Loading GDT at {:#x} with limit {:#x} ({} entries)",
+            base_addr, limit_val, len);
 
         unsafe {
             // Load GDT
@@ -356,6 +385,9 @@ static mut GDT_INITIALIZED: bool = false;
 /// includes user segments and a TSS.
 pub fn init() {
     unsafe {
+        crate::serial_println!("[GDT INIT] GDT static variable is at address: {:#x}",
+            &GDT as *const _ as u64);
+
         // Initialize TSS
         let tss = TaskStateSegment::new();
         TSS.write(tss);
@@ -366,6 +398,9 @@ pub fn init() {
         gdt.initialize(tss_ref);
         GDT.write(gdt);
         GDT_INITIALIZED = true;
+
+        crate::serial_println!("[GDT INIT] After GDT.write(), entries array is at: {:#x}",
+            GDT.assume_init_ref().entries.as_ptr() as u64);
 
         // Load the new GDT
         let gdt_ref: &'static GlobalDescriptorTable = GDT.assume_init_ref();
@@ -396,6 +431,44 @@ pub unsafe fn get_tss() -> &'static TaskStateSegment {
         panic!("GDT/TSS not initialized!");
     }
     TSS.assume_init_ref()
+}
+
+/// Force-reload Ring 1 segments into the ACTIVE GDT
+///
+/// This is a workaround for the issue where the GDT gets reloaded at a different
+/// address after initialization. We use sgdt to find the current GDT and patch
+/// the Ring 1 segments directly into it.
+pub unsafe fn patch_ring1_segments_into_active_gdt() {
+    // Get the current GDT address via sgdt
+    let mut gdt_base: u64 = 0;
+    let mut gdt_limit: u16 = 0;
+    core::arch::asm!(
+        "sub rsp, 10",
+        "sgdt [rsp]",
+        "mov {0:x}, [rsp + 2]",  // Load base
+        "mov {1:x}, [rsp]",       // Load limit
+        "add rsp, 10",
+        out(reg) gdt_base,
+        out(reg) gdt_limit,
+    );
+
+    crate::serial_println!("[GDT PATCH] Current GDT at {:#x}, limit {:#x}", gdt_base, gdt_limit);
+
+    // Create Ring 1 segment descriptors
+    let service_code = GdtEntry::service_code();
+    let service_data = GdtEntry::service_data();
+
+    // Calculate pointers to indices 5 and 6 in the active GDT
+    let service_code_ptr = (gdt_base + 5 * 8) as *mut GdtEntry;
+    let service_data_ptr = (gdt_base + 6 * 8) as *mut GdtEntry;
+
+    // Write the Ring 1 segments directly to the active GDT
+    core::ptr::write(service_code_ptr, service_code);
+    core::ptr::write(service_data_ptr, service_data);
+
+    crate::serial_println!("[GDT PATCH] ✓ Patched Ring 1 segments into active GDT");
+    crate::serial_println!("[GDT PATCH]   SERVICE_CODE at {:#x}", service_code_ptr as u64);
+    crate::serial_println!("[GDT PATCH]   SERVICE_DATA at {:#x}", service_data_ptr as u64);
 }
 
 /// Get a mutable reference to the TSS
