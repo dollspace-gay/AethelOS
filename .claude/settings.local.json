@@ -131,7 +131,8 @@
       "Bash(bd dep tree:*)",
       "Bash(cd:*)",
       "Bash(wsl find:*)",
-      "Bash(nul)"
+      "Bash(nul)",
+      "Bash(cargo run:*)"
     ],
     "deny": [],
     "ask": []

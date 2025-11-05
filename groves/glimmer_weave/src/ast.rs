@@ -39,10 +39,16 @@ pub enum AstNode {
         else_branch: Option<Vec<AstNode>>,
     },
 
-    /// Loop: `for each x in list then ... end`
+    /// Bounded loop: `for each x in list then ... end`
     ForStmt {
         variable: String,
         iterable: Box<AstNode>,
+        body: Vec<AstNode>,
+    },
+
+    /// Unbounded loop: `whilst condition then ... end`
+    WhileStmt {
+        condition: Box<AstNode>,
         body: Vec<AstNode>,
     },
 
@@ -239,6 +245,7 @@ impl AstNode {
                 | AstNode::SetStmt { .. }
                 | AstNode::IfStmt { .. }
                 | AstNode::ForStmt { .. }
+                | AstNode::WhileStmt { .. }
                 | AstNode::ChantDef { .. }
                 | AstNode::YieldStmt { .. }
                 | AstNode::MatchStmt { .. }

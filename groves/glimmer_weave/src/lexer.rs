@@ -239,6 +239,7 @@ impl Lexer {
             "each" => Token::Each,
             "in" => Token::In,
             "range" => Token::Range,
+            "whilst" => Token::Whilst,
             "chant" => Token::Chant,
             "yield" => Token::Yield,
             "seek" => Token::Seek,

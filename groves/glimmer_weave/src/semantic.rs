@@ -484,6 +484,22 @@ impl SemanticAnalyzer {
                 Type::Nothing
             }
 
+            AstNode::WhileStmt { condition, body } => {
+                // Analyze condition (should evaluate to something truthy)
+                let _cond_type = self.analyze_node(condition);
+                // Accept any type for condition (will be checked at runtime via is_truthy)
+
+                // Analyze body in new scope
+                self.symbol_table.push_scope();
+
+                for stmt in body {
+                    self.analyze_node(stmt);
+                }
+
+                self.symbol_table.pop_scope();
+                Type::Nothing
+            }
+
             // === Binary Operations ===
             AstNode::BinaryOp { left, op, right } => {
                 let left_type = self.analyze_node(left);

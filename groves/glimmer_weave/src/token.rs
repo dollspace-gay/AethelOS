@@ -44,7 +44,7 @@ pub enum Token {
     /// `otherwise` - Else clause
     Otherwise,
 
-    /// `for` - Loop keyword
+    /// `for` - Bounded loop keyword
     For,
     /// `each` - Iteration keyword
     Each,
@@ -52,6 +52,8 @@ pub enum Token {
     In,
     /// `range` - Range constructor
     Range,
+    /// `whilst` - Unbounded loop keyword (while)
+    Whilst,
 
     /// `chant` - Function declaration
     Chant,
@@ -198,6 +200,7 @@ impl Token {
                 | Token::Each
                 | Token::In
                 | Token::Range
+                | Token::Whilst
                 | Token::Chant
                 | Token::Yield
                 | Token::Seek
@@ -232,6 +235,7 @@ impl Token {
                 | Token::Set
                 | Token::Should
                 | Token::For
+                | Token::Whilst
                 | Token::Chant
                 | Token::Seek
                 | Token::Attempt
@@ -257,6 +261,7 @@ impl Token {
             Token::Each => "each",
             Token::In => "in",
             Token::Range => "range",
+            Token::Whilst => "whilst",
             Token::Chant => "chant",
             Token::Yield => "yield",
             Token::Seek => "seek",

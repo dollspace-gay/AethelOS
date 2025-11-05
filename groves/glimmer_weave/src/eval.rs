@@ -342,6 +342,19 @@ impl Evaluator {
                 Ok(result)
             }
 
+            // whilst condition then ... end
+            AstNode::WhileStmt { condition, body } => {
+                let mut result = Value::Nothing;
+                loop {
+                    let cond_val = self.eval_node(condition)?;
+                    if !cond_val.is_truthy() {
+                        break;
+                    }
+                    result = self.eval(body)?;
+                }
+                Ok(result)
+            }
+
             // chant greet(name) then ... end
             AstNode::ChantDef { name, params, body } => {
                 let chant = Value::Chant {
@@ -584,5 +597,167 @@ impl Evaluator {
                 got: val.type_name().to_string(),
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    fn eval_program(source: &str) -> Result<Value, RuntimeError> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().expect("Parse error");
+        let mut evaluator = Evaluator::new();
+        evaluator.eval(&ast)
+    }
+
+    #[test]
+    fn test_while_loop_countdown() {
+        let source = r#"
+weave counter as 5
+weave sum as 0
+
+whilst counter > 0 then
+    set sum to sum + counter
+    set counter to counter - 1
+end
+
+sum
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(15.0)); // 5+4+3+2+1 = 15
+    }
+
+    #[test]
+    fn test_while_loop_with_break_condition() {
+        let source = r#"
+weave x as 0
+whilst x < 100 then
+    set x to x + 1
+end
+x
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(100.0));
+    }
+
+    #[test]
+    fn test_factorial_via_recursion() {
+        let source = r#"
+chant factorial(n) then
+    should n <= 1 then
+        yield 1
+    otherwise
+        yield n * factorial(n - 1)
+    end
+end
+
+factorial(5)
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(120.0)); // 5! = 120
+    }
+
+    #[test]
+    fn test_fibonacci_via_while_loop() {
+        let source = r#"
+chant fibonacci(n) then
+    should n <= 1 then
+        yield n
+    end
+
+    weave a as 0
+    weave b as 1
+    weave count as 2
+
+    whilst count <= n then
+        weave temp as a + b
+        set a to b
+        set b to temp
+        set count to count + 1
+    end
+
+    yield b
+end
+
+fibonacci(10)
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(55.0)); // 10th Fibonacci number
+    }
+
+    #[test]
+    fn test_nested_while_loops() {
+        let source = r#"
+weave sum as 0
+weave i as 1
+
+whilst i <= 3 then
+    weave j as 1
+    whilst j <= 3 then
+        set sum to sum + 1
+        set j to j + 1
+    end
+    set i to i + 1
+end
+
+sum
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(9.0)); // 3x3 = 9
+    }
+
+    #[test]
+    fn test_recursion_with_accumulator() {
+        let source = r#"
+chant sum_to(n, acc) then
+    should n <= 0 then
+        yield acc
+    otherwise
+        yield sum_to(n - 1, acc + n)
+    end
+end
+
+sum_to(100, 0)
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(5050.0)); // Sum of 1..100
+    }
+
+    #[test]
+    fn test_turing_completeness_collatz() {
+        // The Collatz conjecture test - unbounded iteration
+        let source = r#"
+chant collatz_steps(n) then
+    weave steps as 0
+    weave num as n
+
+    whilst num > 1 then
+        should num % 2 is 0 then
+            set num to num / 2
+        otherwise
+            set num to 3 * num + 1
+        end
+        set steps to steps + 1
+    end
+
+    yield steps
+end
+
+collatz_steps(27)
+        "#;
+
+        let result = eval_program(source).expect("Eval failed");
+        assert_eq!(result, Value::Number(111.0)); // Collatz(27) takes 111 steps
     }
 }

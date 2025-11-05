@@ -112,6 +112,7 @@ impl Parser {
             Token::Set => self.parse_set(),
             Token::Should => self.parse_if(),
             Token::For => self.parse_for(),
+            Token::Whilst => self.parse_while(),
             Token::Chant => self.parse_chant_def(),
             Token::Yield => self.parse_yield(),
             Token::Match => self.parse_match(),
@@ -261,6 +262,29 @@ impl Parser {
         Ok(AstNode::ForStmt {
             variable,
             iterable,
+            body,
+        })
+    }
+
+    /// Parse: whilst condition then ... end
+    fn parse_while(&mut self) -> ParseResult<AstNode> {
+        self.expect(Token::Whilst)?;
+
+        let condition = Box::new(self.parse_expression()?);
+
+        self.expect(Token::Then)?;
+        self.skip_newlines();
+
+        let mut body = Vec::new();
+        while !matches!(self.current(), Token::End | Token::Eof) {
+            body.push(self.parse_statement()?);
+            self.skip_newlines();
+        }
+
+        self.expect(Token::End)?;
+
+        Ok(AstNode::WhileStmt {
+            condition,
             body,
         })
     }
