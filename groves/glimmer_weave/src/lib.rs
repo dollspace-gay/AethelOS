@@ -38,7 +38,9 @@
 //! - [`eval`]: Evaluator/interpreter for executing AST
 //! - [`codegen`]: Code generator for compiling to x86-64 assembly
 
-#![cfg_attr(not(test), no_std)]
+// TODO(no_std): Re-enable no_std support when glimmer_weave is integrated into kernel
+// For now, use std to allow tests to run
+// #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 

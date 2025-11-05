@@ -16,6 +16,30 @@ use alloc::vec;
 use alloc::format;
 use crate::eval::{Value, RuntimeError};
 
+/// Math functions abstraction - use std when available (tests), libm when no_std
+mod math {
+    // Use libm when the feature is enabled
+    #[cfg(feature = "use_libm")]
+    pub use libm::{sqrt, pow, floor, ceil, round};
+
+    // Use std math functions when std is available (includes tests)
+    // This is the default when use_libm feature is not enabled
+    #[cfg(not(feature = "use_libm"))]
+    pub fn sqrt(x: f64) -> f64 { x.sqrt() }
+
+    #[cfg(not(feature = "use_libm"))]
+    pub fn pow(x: f64, y: f64) -> f64 { x.powf(y) }
+
+    #[cfg(not(feature = "use_libm"))]
+    pub fn floor(x: f64) -> f64 { x.floor() }
+
+    #[cfg(not(feature = "use_libm"))]
+    pub fn ceil(x: f64) -> f64 { x.ceil() }
+
+    #[cfg(not(feature = "use_libm"))]
+    pub fn round(x: f64) -> f64 { x.round() }
+}
+
 /// Type signature for native function implementations
 pub type NativeFn = fn(&[Value]) -> Result<Value, RuntimeError>;
 
@@ -297,7 +321,7 @@ fn math_sqrt(args: &[Value]) -> Result<Value, RuntimeError> {
             if *n < 0.0 {
                 Err(RuntimeError::Custom("Cannot take square root of negative number".to_string()))
             } else {
-                Ok(Value::Number(libm::sqrt(*n)))
+                Ok(Value::Number(math::sqrt(*n)))
             }
         }
         v => Err(RuntimeError::TypeError {
@@ -310,7 +334,7 @@ fn math_sqrt(args: &[Value]) -> Result<Value, RuntimeError> {
 fn math_pow(args: &[Value]) -> Result<Value, RuntimeError> {
     match (&args[0], &args[1]) {
         (Value::Number(base), Value::Number(exp)) => {
-            Ok(Value::Number(libm::pow(*base, *exp)))
+            Ok(Value::Number(math::pow(*base, *exp)))
         }
         _ => Err(RuntimeError::TypeError {
             expected: "Number, Number".to_string(),
@@ -345,7 +369,7 @@ fn math_max(args: &[Value]) -> Result<Value, RuntimeError> {
 
 fn math_floor(args: &[Value]) -> Result<Value, RuntimeError> {
     match &args[0] {
-        Value::Number(n) => Ok(Value::Number(libm::floor(*n))),
+        Value::Number(n) => Ok(Value::Number(math::floor(*n))),
         v => Err(RuntimeError::TypeError {
             expected: "Number".to_string(),
             got: v.type_name().to_string(),
@@ -355,7 +379,7 @@ fn math_floor(args: &[Value]) -> Result<Value, RuntimeError> {
 
 fn math_ceil(args: &[Value]) -> Result<Value, RuntimeError> {
     match &args[0] {
-        Value::Number(n) => Ok(Value::Number(libm::ceil(*n))),
+        Value::Number(n) => Ok(Value::Number(math::ceil(*n))),
         v => Err(RuntimeError::TypeError {
             expected: "Number".to_string(),
             got: v.type_name().to_string(),
@@ -365,7 +389,7 @@ fn math_ceil(args: &[Value]) -> Result<Value, RuntimeError> {
 
 fn math_round(args: &[Value]) -> Result<Value, RuntimeError> {
     match &args[0] {
-        Value::Number(n) => Ok(Value::Number(libm::round(*n))),
+        Value::Number(n) => Ok(Value::Number(math::round(*n))),
         v => Err(RuntimeError::TypeError {
             expected: "Number".to_string(),
             got: v.type_name().to_string(),

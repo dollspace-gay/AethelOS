@@ -1,0 +1,371 @@
+# ════════════════════════════════════════════════════════════════
+# Glimmer-Weave Comprehensive Integration Test
+# Tests ALL language capabilities including Turing completeness
+# ════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════
+# 1. VARIABLES & DATA TYPES
+# ════════════════════════════════════════════════════════════════
+
+# Immutable bindings
+bind my_number to 42
+bind my_text to "Hello, AethelOS"
+bind my_truth to true
+bind my_falsehood to false
+bind my_nothing to nothing
+
+# Mutable bindings
+weave counter as 0
+weave accumulator as 1
+
+# Collections
+bind my_list to [1, 2, 3, 4, 5]
+bind my_map to {name: "Elara", age: 142, role: "Weaver"}
+
+# ════════════════════════════════════════════════════════════════
+# 2. ARITHMETIC OPERATORS
+# ════════════════════════════════════════════════════════════════
+
+bind sum to 10 + 5
+bind difference to 10 - 5
+bind product to 10 * 5
+bind quotient to 10 / 5
+bind remainder to 10 % 3
+
+# ════════════════════════════════════════════════════════════════
+# 3. COMPARISON OPERATORS
+# ════════════════════════════════════════════════════════════════
+
+bind is_equal to 5 is 5
+bind is_not_equal to 5 is not 3
+bind is_greater to 10 > 5
+bind is_less to 5 < 10
+bind is_greater_eq to 10 >= 10
+bind is_less_eq to 5 <= 10
+
+# ════════════════════════════════════════════════════════════════
+# 4. LOGICAL OPERATORS
+# ════════════════════════════════════════════════════════════════
+
+bind logical_and to true and true
+bind logical_or to false or true
+bind logical_not to not false
+
+# ════════════════════════════════════════════════════════════════
+# 5. CONDITIONAL STATEMENTS (should/otherwise)
+# ════════════════════════════════════════════════════════════════
+
+weave conditional_result as 0
+
+should 10 > 5 then
+    set conditional_result to 100
+end
+
+should false then
+    set conditional_result to 999
+otherwise
+    set conditional_result to 200
+end
+
+# Nested conditionals
+weave nested_result as 0
+
+should true then
+    should 5 > 3 then
+        set nested_result to 42
+    end
+end
+
+# ════════════════════════════════════════════════════════════════
+# 6. BOUNDED LOOPS (for each)
+# ════════════════════════════════════════════════════════════════
+
+weave for_sum as 0
+for each num in [1, 2, 3, 4, 5] then
+    set for_sum to for_sum + num
+end
+
+# For loop with range
+weave range_sum as 0
+for each i in [0, 1, 2, 3, 4] then
+    set range_sum to range_sum + i
+end
+
+# ════════════════════════════════════════════════════════════════
+# 7. UNBOUNDED LOOPS (whilst) - TURING COMPLETENESS!
+# ════════════════════════════════════════════════════════════════
+
+# Simple countdown
+weave while_counter as 5
+weave while_sum as 0
+
+whilst while_counter > 0 then
+    set while_sum to while_sum + while_counter
+    set while_counter to while_counter - 1
+end
+
+# Nested while loops
+weave nested_while_result as 0
+weave outer as 1
+
+whilst outer <= 3 then
+    weave inner as 1
+    whilst inner <= 3 then
+        set nested_while_result to nested_while_result + 1
+        set inner to inner + 1
+    end
+    set outer to outer + 1
+end
+
+# ════════════════════════════════════════════════════════════════
+# 8. FUNCTIONS (chant/yield)
+# ════════════════════════════════════════════════════════════════
+
+# Simple function
+chant greet(name) then
+    yield "Hello, " + name
+end
+
+bind greeting to greet("Elara")
+
+# Function with multiple parameters
+chant add(a, b) then
+    yield a + b
+end
+
+bind add_result to add(10, 32)
+
+# Function with conditional
+chant absolute(n) then
+    should n < 0 then
+        yield 0 - n
+    otherwise
+        yield n
+    end
+end
+
+bind abs_positive to absolute(5)
+bind abs_negative to absolute(0 - 5)
+
+# ════════════════════════════════════════════════════════════════
+# 9. RECURSION - TURING COMPLETENESS!
+# ════════════════════════════════════════════════════════════════
+
+# Factorial (non-tail-recursive)
+chant factorial(n) then
+    should n <= 1 then
+        yield 1
+    otherwise
+        yield n * factorial(n - 1)
+    end
+end
+
+bind fact_5 to factorial(5)
+bind fact_7 to factorial(7)
+
+# Tail-recursive sum
+chant sum_to(n, acc) then
+    should n <= 0 then
+        yield acc
+    otherwise
+        yield sum_to(n - 1, acc + n)
+    end
+end
+
+bind sum_100 to sum_to(100, 0)
+
+# Fibonacci via recursion
+chant fib_recursive(n) then
+    should n <= 1 then
+        yield n
+    otherwise
+        yield fib_recursive(n - 1) + fib_recursive(n - 2)
+    end
+end
+
+bind fib_10 to fib_recursive(10)
+
+# ════════════════════════════════════════════════════════════════
+# 10. FIBONACCI VIA WHILE LOOP (Alternative Turing Complete Demo)
+# ════════════════════════════════════════════════════════════════
+
+chant fibonacci(n) then
+    should n <= 1 then
+        yield n
+    end
+
+    weave a as 0
+    weave b as 1
+    weave count as 2
+
+    whilst count <= n then
+        weave temp as a + b
+        set a to b
+        set b to temp
+        set count to count + 1
+    end
+
+    yield b
+end
+
+bind fib_15 to fibonacci(15)
+bind fib_20 to fibonacci(20)
+
+# ════════════════════════════════════════════════════════════════
+# 11. PRIME NUMBER CHECK (Unbounded Iteration)
+# ════════════════════════════════════════════════════════════════
+
+chant is_prime(n) then
+    should n <= 1 then
+        yield false
+    end
+
+    should n is 2 then
+        yield true
+    end
+
+    weave divisor as 2
+    whilst divisor * divisor <= n then
+        should n % divisor is 0 then
+            yield false
+        end
+        set divisor to divisor + 1
+    end
+
+    yield true
+end
+
+bind prime_17 to is_prime(17)
+bind prime_16 to is_prime(16)
+bind prime_97 to is_prime(97)
+
+# ════════════════════════════════════════════════════════════════
+# 12. COLLATZ CONJECTURE (Unbounded Halting Problem)
+# ════════════════════════════════════════════════════════════════
+
+chant collatz_steps(n) then
+    weave steps as 0
+    weave num as n
+
+    whilst num > 1 then
+        should num % 2 is 0 then
+            set num to num / 2
+        otherwise
+            set num to 3 * num + 1
+        end
+        set steps to steps + 1
+    end
+
+    yield steps
+end
+
+bind collatz_27 to collatz_steps(27)
+bind collatz_31 to collatz_steps(31)
+
+# ════════════════════════════════════════════════════════════════
+# 13. GCD ALGORITHM (Euclidean)
+# ════════════════════════════════════════════════════════════════
+
+chant gcd(a, b) then
+    weave x as a
+    weave y as b
+
+    whilst y > 0 then
+        weave temp as y
+        set y to x % y
+        set x to temp
+    end
+
+    yield x
+end
+
+bind gcd_48_18 to gcd(48, 18)
+bind gcd_100_35 to gcd(100, 35)
+
+# ════════════════════════════════════════════════════════════════
+# 14. COMPLEX NESTED STRUCTURES
+# ════════════════════════════════════════════════════════════════
+
+# Function that uses multiple features
+chant complex_algorithm(limit) then
+    weave result as 0
+    weave i as 1
+
+    whilst i <= limit then
+        should i % 2 is 0 then
+            should i % 3 is 0 then
+                set result to result + i * 2
+            otherwise
+                set result to result + i
+            end
+        otherwise
+            set result to result + 1
+        end
+        set i to i + 1
+    end
+
+    yield result
+end
+
+bind complex_10 to complex_algorithm(10)
+bind complex_20 to complex_algorithm(20)
+
+# ════════════════════════════════════════════════════════════════
+# 15. MUTATION TESTING
+# ════════════════════════════════════════════════════════════════
+
+weave mutation_test as 0
+set mutation_test to 10
+set mutation_test to mutation_test + 5
+set mutation_test to mutation_test * 2
+
+# ════════════════════════════════════════════════════════════════
+# 16. STRING OPERATIONS
+# ════════════════════════════════════════════════════════════════
+
+bind hello to "Hello"
+bind world to "World"
+bind concatenated to hello + ", " + world + "!"
+
+# ════════════════════════════════════════════════════════════════
+# 17. LIST OPERATIONS
+# ════════════════════════════════════════════════════════════════
+
+bind first_element to my_list[0]
+bind last_element to my_list[4]
+
+weave list_sum as 0
+for each item in my_list then
+    set list_sum to list_sum + item
+end
+
+# ════════════════════════════════════════════════════════════════
+# 18. MAP OPERATIONS (Field Access)
+# ════════════════════════════════════════════════════════════════
+
+bind elara_name to my_map.name
+bind elara_age to my_map.age
+
+# ════════════════════════════════════════════════════════════════
+# FINAL RESULT: Return comprehensive test summary
+# ════════════════════════════════════════════════════════════════
+
+# All tests passed if we reach here without errors!
+bind test_summary to {
+    variables_ok: true,
+    arithmetic_ok: sum is 15,
+    comparisons_ok: is_equal and is_greater,
+    logic_ok: logical_and and logical_or,
+    conditionals_ok: conditional_result is 200,
+    for_loops_ok: for_sum is 15,
+    while_loops_ok: while_sum is 15,
+    functions_ok: add_result is 42,
+    recursion_ok: fact_5 is 120,
+    fibonacci_ok: fib_15 is 610,
+    prime_check_ok: prime_17 and not prime_16,
+    gcd_ok: gcd_48_18 is 6,
+    turing_complete: true
+}
+
+# Return the test summary
+test_summary

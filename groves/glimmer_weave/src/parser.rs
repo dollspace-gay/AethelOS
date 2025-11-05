@@ -776,6 +776,7 @@ impl Parser {
     /// Parse map: {name: "Elara", age: 42}
     fn parse_map(&mut self) -> ParseResult<AstNode> {
         self.expect(Token::LeftBrace)?;
+        self.skip_newlines();  // Skip newlines after opening brace
 
         let mut pairs = Vec::new();
         if !matches!(self.current(), Token::RightBrace) {
@@ -799,9 +800,11 @@ impl Parser {
                 if !self.match_token(Token::Comma) {
                     break;
                 }
+                self.skip_newlines();  // Skip newlines after comma
             }
         }
 
+        self.skip_newlines();  // Skip newlines before closing brace
         self.expect(Token::RightBrace)?;
         Ok(AstNode::Map(pairs))
     }

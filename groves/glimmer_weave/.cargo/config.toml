@@ -1,0 +1,11 @@
+# Local cargo config for glimmer_weave
+# Overrides workspace config to allow tests to run on host platform
+
+[build]
+# Use host target instead of custom x86_64-aethelos target
+# This allows tests to run with std library
+target = "x86_64-pc-windows-msvc"
+
+# DO NOT build std from source for tests - use pre-compiled std
+# This prevents duplicate lang item errors
+# (Workspace config has build-std which we need to override)

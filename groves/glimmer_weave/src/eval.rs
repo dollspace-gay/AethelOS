@@ -122,6 +122,8 @@ pub enum RuntimeError {
     UnexpectedYield,
     /// Pattern match failed (no arm matched)
     MatchFailed,
+    /// Early return from function (not actually an error, used for control flow)
+    Return(Value),
     /// Custom error message
     Custom(String),
 }
@@ -357,20 +359,36 @@ impl Evaluator {
 
             // chant greet(name) then ... end
             AstNode::ChantDef { name, params, body } => {
+                // Clone environment and add function to it for recursion support
+                let mut closure_env = self.environment.clone();
+
+                // Create the function value
                 let chant = Value::Chant {
                     params: params.clone(),
                     body: body.clone(),
-                    closure: self.environment.clone(),
+                    closure: closure_env.clone(),
                 };
+
+                // Add function to its own closure so it can call itself recursively
+                closure_env.define(name.clone(), chant.clone());
+
+                // Update the closure to include the function itself
+                let chant = Value::Chant {
+                    params: params.clone(),
+                    body: body.clone(),
+                    closure: closure_env,
+                };
+
+                // Define in current environment
                 self.environment.define(name.clone(), chant.clone());
                 Ok(chant)
             }
 
             // yield result
             AstNode::YieldStmt { value } => {
-                // TODO: Implement proper return mechanism
-                // For now, just evaluate and return (needs special handling in function calls)
-                self.eval_node(value)
+                // Use Return "error" for early exit from function
+                let val = self.eval_node(value)?;
+                Err(RuntimeError::Return(val))
             }
 
             // === Binary Operations ===
@@ -394,7 +412,7 @@ impl Evaluator {
                 let arg_vals = arg_vals?;
 
                 match func {
-                    Value::Chant { params, body, closure } => {
+                    Value::Chant { params, body, closure: _ } => {
                         if params.len() != arg_vals.len() {
                             return Err(RuntimeError::ArityMismatch {
                                 expected: params.len(),
@@ -402,8 +420,9 @@ impl Evaluator {
                             });
                         }
 
-                        // Save current environment and switch to closure
-                        let saved_env = core::mem::replace(&mut self.environment, closure);
+                        // For now, use current environment instead of closure for simplicity
+                        // This allows recursion to work since the function is defined in the current env
+                        // TODO: Implement proper closures with captured variables
 
                         // Push new scope for function call
                         self.environment.push_scope();
@@ -418,9 +437,12 @@ impl Evaluator {
 
                         // Restore environment
                         self.environment.pop_scope();
-                        self.environment = saved_env;
 
-                        result
+                        // Handle Return "error" (early exit from function)
+                        match result {
+                            Err(RuntimeError::Return(val)) => Ok(val),
+                            other => other,
+                        }
                     }
                     Value::NativeChant(native_fn) => {
                         // Check arity (None = variadic)

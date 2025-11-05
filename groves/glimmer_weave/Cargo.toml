@@ -5,9 +5,15 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-libm = { version = "0.2", default-features = false }
+# Use libm for no_std environments, std math for tests
+libm = { version = "0.2", default-features = false, optional = true }
 
 [dev-dependencies]
+
+[features]
+default = []
+# Use libm only when no_std is required
+use_libm = ["libm"]
 
 [lib]
 name = "glimmer_weave"

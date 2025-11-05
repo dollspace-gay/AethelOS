@@ -132,7 +132,11 @@
       "Bash(cd:*)",
       "Bash(wsl find:*)",
       "Bash(nul)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(bd --help:*)",
+      "Bash(jq:*)",
+      "Bash(bd comment:*)",
+      "Bash(CARGO_BUILD_STD=\"\" cargo test:*)"
     ],
     "deny": [],
     "ask": []
