@@ -224,6 +224,101 @@ impl Lexer {
             self.column = saved_col;
         }
 
+        // Check for "greater than"
+        if text == "greater" && self.current_char == Some(' ') {
+            let saved_pos = self.position;
+            let saved_char = self.current_char;
+            let saved_line = self.line;
+            let saved_col = self.column;
+
+            self.skip_whitespace();
+            if let Some(c) = self.current_char {
+                if c.is_alphabetic() {
+                    let start2 = self.position;
+                    while let Some(c2) = self.current_char {
+                        if c2.is_alphanumeric() || c2 == '_' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let text2: String = self.input[start2..self.position].iter().collect();
+                    if text2 == "than" {
+                        return Token::GreaterThan;
+                    }
+                }
+            }
+
+            self.position = saved_pos;
+            self.current_char = saved_char;
+            self.line = saved_line;
+            self.column = saved_col;
+        }
+
+        // Check for "less than"
+        if text == "less" && self.current_char == Some(' ') {
+            let saved_pos = self.position;
+            let saved_char = self.current_char;
+            let saved_line = self.line;
+            let saved_col = self.column;
+
+            self.skip_whitespace();
+            if let Some(c) = self.current_char {
+                if c.is_alphabetic() {
+                    let start2 = self.position;
+                    while let Some(c2) = self.current_char {
+                        if c2.is_alphanumeric() || c2 == '_' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let text2: String = self.input[start2..self.position].iter().collect();
+                    if text2 == "than" {
+                        return Token::LessThan;
+                    }
+                }
+            }
+
+            self.position = saved_pos;
+            self.current_char = saved_char;
+            self.line = saved_line;
+            self.column = saved_col;
+        }
+
+        // Check for "at least"
+        if text == "at" && self.current_char == Some(' ') {
+            let saved_pos = self.position;
+            let saved_char = self.current_char;
+            let saved_line = self.line;
+            let saved_col = self.column;
+
+            self.skip_whitespace();
+            if let Some(c) = self.current_char {
+                if c.is_alphabetic() {
+                    let start2 = self.position;
+                    while let Some(c2) = self.current_char {
+                        if c2.is_alphanumeric() || c2 == '_' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let text2: String = self.input[start2..self.position].iter().collect();
+                    if text2 == "least" {
+                        return Token::AtLeast;
+                    } else if text2 == "most" {
+                        return Token::AtMost;
+                    }
+                }
+            }
+
+            self.position = saved_pos;
+            self.current_char = saved_char;
+            self.line = saved_line;
+            self.column = saved_col;
+        }
+
         // Match keyword
         match text.as_str() {
             "bind" => Token::Bind,
@@ -242,6 +337,7 @@ impl Lexer {
             "whilst" => Token::Whilst,
             "chant" => Token::Chant,
             "yield" => Token::Yield,
+            "form" => Token::Form,
             "seek" => Token::Seek,
             "where" => Token::Where,
             "by" => Token::By,
@@ -258,6 +354,10 @@ impl Lexer {
             "with" => Token::With,
             "request" => Token::Request,
             "justification" => Token::Justification,
+            "Triumph" => Token::Triumph,
+            "Mishap" => Token::Mishap,
+            "Present" => Token::Present,
+            "Absent" => Token::Absent,
             "after" => Token::After,
             "before" => Token::Before,
             "descending" => Token::Descending,
@@ -306,7 +406,12 @@ impl Lexer {
 
             Some('-') => {
                 self.advance();
-                Token::Minus
+                if self.current_char == Some('>') {
+                    self.advance();
+                    Token::Arrow
+                } else {
+                    Token::Minus
+                }
             }
 
             Some('*') => {
@@ -324,24 +429,16 @@ impl Lexer {
                 Token::Percent
             }
 
-            Some('>') => {
-                self.advance();
-                if self.current_char == Some('=') {
-                    self.advance();
-                    Token::GreaterEq
-                } else {
-                    Token::Greater
-                }
-            }
-
+            // < and > are ONLY for generic type syntax (e.g., List<Number>)
+            // For comparisons, use natural language: "greater than", "less than", etc.
             Some('<') => {
                 self.advance();
-                if self.current_char == Some('=') {
-                    self.advance();
-                    Token::LessEq
-                } else {
-                    Token::Less
-                }
+                Token::LeftAngle
+            }
+
+            Some('>') => {
+                self.advance();
+                Token::RightAngle
             }
 
             Some('|') => {
@@ -476,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let source = "+ - * / % > < >= <= |";
+        let source = "+ - * / % > < |";
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize();
 
@@ -485,11 +582,10 @@ mod tests {
         assert_eq!(tokens[2], Token::Star);
         assert_eq!(tokens[3], Token::Slash);
         assert_eq!(tokens[4], Token::Percent);
-        assert_eq!(tokens[5], Token::Greater);
-        assert_eq!(tokens[6], Token::Less);
-        assert_eq!(tokens[7], Token::GreaterEq);
-        assert_eq!(tokens[8], Token::LessEq);
-        assert_eq!(tokens[9], Token::Pipe);
+        // < and > are now only for type generics (List<Number>)
+        assert_eq!(tokens[5], Token::RightAngle);
+        assert_eq!(tokens[6], Token::LeftAngle);
+        assert_eq!(tokens[7], Token::Pipe);
     }
 
     #[test]
@@ -524,7 +620,7 @@ mod tests {
     fn test_simple_program() {
         let source = r#"bind x to 42
 bind name to "Elara"
-should x > 40 then
+should x greater than 40 then
     VGA.write("Large number")
 end"#;
 
@@ -545,10 +641,10 @@ end"#;
         assert_eq!(tokens[8], Token::Text("Elara".to_string()));
         assert_eq!(tokens[9], Token::Newline);
 
-        // should x > 40 then
+        // should x greater than 40 then
         assert_eq!(tokens[10], Token::Should);
         assert_eq!(tokens[11], Token::Ident("x".to_string()));
-        assert_eq!(tokens[12], Token::Greater);
+        assert_eq!(tokens[12], Token::GreaterThan);
         assert_eq!(tokens[13], Token::Number(40.0));
         assert_eq!(tokens[14], Token::Then);
     }

@@ -60,6 +60,9 @@ pub enum Token {
     /// `yield` - Return statement
     Yield,
 
+    /// `form` - Struct/type declaration
+    Form,
+
     /// `seek` - Query/search keyword
     Seek,
     /// `where` - Query filter
@@ -96,6 +99,15 @@ pub enum Token {
     Request,
     /// `justification` - Capability justification
     Justification,
+
+    /// `Triumph` - Successful Outcome constructor
+    Triumph,
+    /// `Mishap` - Failed Outcome constructor
+    Mishap,
+    /// `Present` - Present Maybe constructor
+    Present,
+    /// `Absent` - Absent Maybe constructor
+    Absent,
 
     /// `after` - Temporal comparison
     After,
@@ -136,14 +148,19 @@ pub enum Token {
     Is,
     /// `is not` inequality comparison
     IsNot,
-    /// `>` greater than
-    Greater,
-    /// `<` less than
-    Less,
-    /// `>=` greater than or equal
-    GreaterEq,
-    /// `<=` less than or equal
-    LessEq,
+    /// `greater than` comparison
+    GreaterThan,
+    /// `less than` comparison
+    LessThan,
+    /// `at least` (>=) comparison
+    AtLeast,
+    /// `at most` (<=) comparison
+    AtMost,
+
+    /// `<` left angle bracket (for generic type syntax only)
+    LeftAngle,
+    /// `>` right angle bracket (for generic type syntax only)
+    RightAngle,
 
     /// `and` logical AND
     And,
@@ -154,6 +171,8 @@ pub enum Token {
 
     /// `|` pipeline operator
     Pipe,
+    /// `->` arrow (for return type annotations)
+    Arrow,
 
     // === Delimiters ===
     /// `(` left parenthesis
@@ -203,6 +222,7 @@ impl Token {
                 | Token::Whilst
                 | Token::Chant
                 | Token::Yield
+                | Token::Form
                 | Token::Seek
                 | Token::Where
                 | Token::By
@@ -219,6 +239,10 @@ impl Token {
                 | Token::With
                 | Token::Request
                 | Token::Justification
+                | Token::Triumph
+                | Token::Mishap
+                | Token::Present
+                | Token::Absent
                 | Token::After
                 | Token::Before
                 | Token::Descending
@@ -237,6 +261,7 @@ impl Token {
                 | Token::For
                 | Token::Whilst
                 | Token::Chant
+                | Token::Form
                 | Token::Seek
                 | Token::Attempt
                 | Token::Match
@@ -264,6 +289,7 @@ impl Token {
             Token::Whilst => "whilst",
             Token::Chant => "chant",
             Token::Yield => "yield",
+            Token::Form => "form",
             Token::Seek => "seek",
             Token::Where => "where",
             Token::By => "by",
@@ -280,6 +306,10 @@ impl Token {
             Token::With => "with",
             Token::Request => "request",
             Token::Justification => "justification",
+            Token::Triumph => "Triumph",
+            Token::Mishap => "Mishap",
+            Token::Present => "Present",
+            Token::Absent => "Absent",
             Token::After => "after",
             Token::Before => "before",
             Token::Descending => "descending",
@@ -296,14 +326,17 @@ impl Token {
             Token::Percent => "%",
             Token::Is => "is",
             Token::IsNot => "is not",
-            Token::Greater => ">",
-            Token::Less => "<",
-            Token::GreaterEq => ">=",
-            Token::LessEq => "<=",
+            Token::GreaterThan => "greater than",
+            Token::LessThan => "less than",
+            Token::AtLeast => "at least",
+            Token::AtMost => "at most",
+            Token::LeftAngle => "<",
+            Token::RightAngle => ">",
             Token::And => "and",
             Token::Or => "or",
             Token::Not => "not",
             Token::Pipe => "|",
+            Token::Arrow => "->",
             Token::LeftParen => "(",
             Token::RightParen => ")",
             Token::LeftBracket => "[",

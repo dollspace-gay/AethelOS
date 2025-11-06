@@ -16,6 +16,13 @@ This directory contains example programs written in Glimmer-Weave, the scripting
 | `08_maps.gw` | Map literals and field access | "Elara" |
 | `09_factorial.gw` | Recursive factorial function | 120 |
 | `10_fibonacci.gw` | Recursive Fibonacci function | 55 |
+| `11_string_functions.gw` | String manipulation | Various |
+| `12_math_functions.gw` | Mathematical operations | Various |
+| `13_list_functions.gw` | List operations | Various |
+| `14_map_functions.gw` | Map operations | Various |
+| `15_type_conversion.gw` | Type conversions | Various |
+| `16_comprehensive_test.gw` | Comprehensive language test | Various |
+| `17_structs.gw` | Custom data types with named fields | 50 |
 
 ## Running Examples
 
@@ -63,8 +70,9 @@ println!("{:?}", result);
 ### Data Structures
 - **Lists**: `[1, 2, 3]`
 - **Maps**: `{name: "Elara", age: 42}`
+- **Structs**: `form Person with name as Text age as Number end`
 - **Indexing**: `list[0]`, `map[key]`
-- **Field access**: `map.field`
+- **Field access**: `map.field`, `struct.field`
 
 ### Operators
 - **Arithmetic**: `+`, `-`, `*`, `/`, `%`
@@ -78,17 +86,21 @@ println!("{:?}", result);
 - Parser (AST generation)
 - Evaluator (basic execution)
 - Variables (bind, weave, set)
-- Control flow (if, for)
+- Control flow (if, for, whilst)
 - Functions (chant, yield)
-- Data structures (lists, maps)
+- Data structures (lists, maps, structs)
 - Arithmetic and logic
-
-⚪ **Not Yet Implemented**:
 - Pattern matching (`match ... when`)
 - Error handling (`attempt ... harmonize`)
+- Outcome/Maybe types (`Triumph`, `Mishap`, `Present`, `Absent`)
+- Custom structs (`form ... with ... end`)
+
+⚪ **Not Yet Implemented**:
 - Pipelines (`|`)
 - World-Tree queries (`seek where`)
 - Capability requests (`request ... with justification`)
+- Bytecode compilation for structs
+- Native codegen for structs
 
 ## Philosophy
 

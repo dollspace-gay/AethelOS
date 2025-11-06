@@ -1,0 +1,192 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   F:\OS\user_programs\hello\Cargo.toml
+workspace: F:\OS\Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   F:\OS\user_programs\test_service\Cargo.toml
+workspace: F:\OS\Cargo.toml
+   Compiling glimmer_weave v0.1.0 (F:\OS\groves\glimmer_weave)
+warning: unexpected `cfg` condition name: `no_std`
+  --> groves\glimmer_weave\src\lib.rs:46:11
+   |
+46 | #[cfg(not(no_std))]
+   |           ^^^^^^
+   |
+   = help: expected names are: `docsrs`, `feature`, and `test` and 31 more
+   = help: consider using a Cargo feature instead
+   = help: or consider adding in `Cargo.toml` the `check-cfg` lint config for the lint:
+            [lints.rust]
+            unexpected_cfgs = { level = "warn", check-cfg = ['cfg(no_std)'] }
+   = help: or consider adding `println!("cargo::rustc-check-cfg=cfg(no_std)");` to the top of the `build.rs`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition name: `no_std`
+  --> groves\glimmer_weave\src\lib.rs:50:7
+   |
+50 | #[cfg(no_std)]
+   |       ^^^^^^
+   |
+   = help: consider using a Cargo feature instead
+   = help: or consider adding in `Cargo.toml` the `check-cfg` lint config for the lint:
+            [lints.rust]
+            unexpected_cfgs = { level = "warn", check-cfg = ['cfg(no_std)'] }
+   = help: or consider adding `println!("cargo::rustc-check-cfg=cfg(no_std)");` to the top of the `build.rs`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unused imports: `String` and `ToString`
+  --> groves\glimmer_weave\src\elf.rs:35:21
+   |
+35 | use alloc::string::{String, ToString};
+   |                     ^^^^^^  ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Parameter`
+  --> groves\glimmer_weave\src\bytecode_compiler.rs:18:58
+   |
+18 | use crate::ast::{AstNode, BinaryOperator, UnaryOperator, Parameter};
+   |                                                          ^^^^^^^^^
+
+warning: unused variable: `c`
+   --> groves\glimmer_weave\src\lexer.rs:489:18
+    |
+489 |             Some(c) => {
+    |                  ^ help: if this is intentional, prefix it with an underscore: `_c`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `label_check_right`
+   --> groves\glimmer_weave\src\codegen.rs:596:29
+    |
+596 |                         let label_check_right = format!(".L_or_check_right_{}", self.label_counter);
+    |                             ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_label_check_right`
+
+warning: unused variable: `null_name`
+   --> groves\glimmer_weave\src\elf.rs:373:13
+    |
+373 |         let null_name = self.shstring_table.add("");
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_null_name`
+
+warning: unused variable: `cond_type`
+   --> groves\glimmer_weave\src\semantic.rs:490:21
+    |
+490 |                 let cond_type = self.analyze_node(condition);
+    |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cond_type`
+
+warning: unused variable: `elem_types`
+   --> groves\glimmer_weave\src\semantic.rs:692:21
+    |
+692 |                 let elem_types: Vec<Type> = elements.iter()
+    |                     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_elem_types`
+
+warning: type `Symbol` is more private than the item `SymbolTable::lookup`
+   --> groves\glimmer_weave\src\semantic.rs:198:5
+    |
+198 |     pub fn lookup(&self, name: &str) -> Option<&Symbol> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `SymbolTable::lookup` is reachable at visibility `pub`
+    |
+note: but type `Symbol` is only usable at visibility `pub(self)`
+   --> groves\glimmer_weave\src\semantic.rs:121:1
+    |
+121 | struct Symbol {
+    | ^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: method `peek` is never used
+  --> groves\glimmer_weave\src\parser.rs:41:8
+   |
+29 | impl Parser {
+   | ----------- method in this implementation
+...
+41 |     fn peek(&self) -> &Token {
+   |        ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `gen_label` is never used
+   --> groves\glimmer_weave\src\codegen.rs:219:8
+    |
+207 | impl CodeGen {
+    | ------------ method in this implementation
+...
+219 |     fn gen_label(&mut self, prefix: &str) -> String {
+    |        ^^^^^^^^^
+
+warning: fields `name` and `defined` are never read
+   --> groves\glimmer_weave\src\semantic.rs:122:5
+    |
+121 | struct Symbol {
+    |        ------ fields in this struct
+122 |     name: String,
+    |     ^^^^
+...
+125 |     defined: bool,  // For forward declarations
+    |     ^^^^^^^
+    |
+    = note: `Symbol` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+  --> groves\glimmer_weave\src\bytecode_compiler.rs:45:12
+   |
+45 |     Global(String),
+   |     ------ ^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `VarLocation` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+45 -     Global(String),
+45 +     Global(()),
+   |
+
+warning: field `depth` is never read
+  --> groves\glimmer_weave\src\bytecode_compiler.rs:53:5
+   |
+49 | struct Scope {
+   |        ----- field in this struct
+...
+53 |     depth: usize,
+   |     ^^^^^
+
+warning: method `current_scope` is never used
+   --> groves\glimmer_weave\src\bytecode_compiler.rs:473:8
+    |
+ 83 | impl BytecodeCompiler {
+    | --------------------- method in this implementation
+...
+473 |     fn current_scope(&self) -> &Scope {
+    |        ^^^^^^^^^^^^^
+
+warning: fields `return_ip` and `base_register` are never read
+  --> groves\glimmer_weave\src\vm.rs:44:5
+   |
+42 | struct CallFrame {
+   |        --------- fields in this struct
+43 |     /// Return address (instruction pointer)
+44 |     return_ip: usize,
+   |     ^^^^^^^^^
+45 |     /// Base register for this frame
+46 |     base_register: u8,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `CallFrame` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `call_stack` is never read
+  --> groves\glimmer_weave\src\vm.rs:58:5
+   |
+50 | pub struct VM {
+   |            -- field in this struct
+...
+58 |     call_stack: Vec<CallFrame>,
+   |     ^^^^^^^^^^
+
+warning: `glimmer_weave` (lib test) generated 18 warnings (run `cargo fix --lib -p glimmer_weave --tests` to apply 7 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.95s
+     Running unittests src\lib.rs (F:\OS\target\x86_64-pc-windows-msvc\debug\deps\glimmer_weave-7c02903a36c3ff34.exe)
+
+running 1 test
+test eval::tests::test_recursion_with_accumulator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+

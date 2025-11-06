@@ -136,7 +136,9 @@
       "Bash(bd --help:*)",
       "Bash(jq:*)",
       "Bash(bd comment:*)",
-      "Bash(CARGO_BUILD_STD=\"\" cargo test:*)"
+      "Bash(CARGO_BUILD_STD=\"\" cargo test:*)",
+      "Bash(cargo check:*)",
+      "Bash(CARGO_BUILD_TARGET_DIR=target_local cargo check:*)"
     ],
     "deny": [],
     "ask": []

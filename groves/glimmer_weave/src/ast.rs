@@ -9,20 +9,69 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// Type annotation in the AST (syntactic representation)
+///
+/// This is the syntactic form of types as they appear in source code.
+/// The semantic analyzer converts these to semantic::Type for type checking.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeAnnotation {
+    /// Simple type name: `Number`, `Text`, `Truth`
+    Named(String),
+    /// List type: `List<Number>`
+    List(Box<TypeAnnotation>),
+    /// Map type: `Map`
+    Map,
+    /// Function type: `Function<(Number, Text) -> Truth>`
+    Function {
+        param_types: Vec<TypeAnnotation>,
+        return_type: Box<TypeAnnotation>,
+    },
+    /// Optional/nullable type: `Number?` (future feature)
+    Optional(Box<TypeAnnotation>),
+}
+
+/// Function parameter with optional type annotation
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    pub name: String,
+    pub typ: Option<TypeAnnotation>,
+}
+
+/// Struct field definition
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub typ: TypeAnnotation,
+}
+
+impl Parameter {
+    /// Create a parameter without type annotation (for backward compatibility)
+    pub fn untyped(name: String) -> Self {
+        Parameter { name, typ: None }
+    }
+
+    /// Create a parameter with type annotation
+    pub fn typed(name: String, typ: TypeAnnotation) -> Self {
+        Parameter { name, typ: Some(typ) }
+    }
+}
+
 /// A node in the Abstract Syntax Tree
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     // === Statements ===
 
-    /// Immutable binding: `bind x to 42`
+    /// Immutable binding: `bind x to 42` or `bind x: Number to 42`
     BindStmt {
         name: String,
+        typ: Option<TypeAnnotation>,
         value: Box<AstNode>,
     },
 
-    /// Mutable variable: `weave counter as 0`
+    /// Mutable variable: `weave counter as 0` or `weave counter: Number as 0`
     WeaveStmt {
         name: String,
+        typ: Option<TypeAnnotation>,
         value: Box<AstNode>,
     },
 
@@ -53,10 +102,18 @@ pub enum AstNode {
     },
 
     /// Function definition: `chant greet(name) then ... end`
+    /// or with types: `chant factorial(n: Number) -> Number then ... end`
     ChantDef {
         name: String,
-        params: Vec<String>,
+        params: Vec<Parameter>,
+        return_type: Option<TypeAnnotation>,
         body: Vec<AstNode>,
+    },
+
+    /// Struct definition: `form Person with name as Text age as Number end`
+    FormDef {
+        name: String,
+        fields: Vec<StructField>,
     },
 
     /// Return statement: `yield result`
@@ -99,11 +156,29 @@ pub enum AstNode {
     /// Variable reference: `x`, `counter`
     Ident(String),
 
+    /// Triumph value: `Triumph(42)` (successful Outcome)
+    Triumph(Box<AstNode>),
+
+    /// Mishap value: `Mishap("error")` (failed Outcome)
+    Mishap(Box<AstNode>),
+
+    /// Present value: `Present(42)` (Maybe with value)
+    Present(Box<AstNode>),
+
+    /// Absent value: `Absent` (Maybe without value)
+    Absent,
+
     /// List literal: `[1, 2, 3]`
     List(Vec<AstNode>),
 
     /// Map literal: `{name: "Elara", age: 42}`
     Map(Vec<(String, AstNode)>),
+
+    /// Struct literal: `Person { name: "Alice", age: 30 }`
+    StructLiteral {
+        struct_name: String,
+        fields: Vec<(String, AstNode)>,
+    },
 
     /// Binary operation: `x + y`, `a > b`
     BinaryOp {
@@ -205,6 +280,11 @@ pub enum Pattern {
     Ident(String),
     /// Wildcard pattern: `otherwise`
     Wildcard,
+    /// Enum pattern: `when Triumph(x) then ...` or `when Absent then ...`
+    Enum {
+        variant: String,  // "Triumph", "Mishap", "Present", "Absent"
+        inner: Option<Box<Pattern>>,  // The inner pattern (if any)
+    },
 }
 
 /// Error handler: `harmonize on ErrorType then ...`

@@ -114,6 +114,10 @@ pub enum SemanticError {
         operation: String,
         operand_type: String,
     },
+    /// Match expression is not exhaustive (doesn't cover all cases)
+    NonExhaustiveMatch {
+        message: String,
+    },
 }
 
 /// Symbol in the symbol table
@@ -347,6 +351,12 @@ impl SemanticAnalyzer {
             AstNode::Truth(_) => Type::Truth,
             AstNode::Nothing => Type::Nothing,
 
+            // === Outcome/Maybe Constructors ===
+            AstNode::Triumph(_value) => Type::Any, // TODO: proper Outcome<T, E> type
+            AstNode::Mishap(_value) => Type::Any, // TODO: proper Outcome<T, E> type
+            AstNode::Present(_value) => Type::Any, // TODO: proper Maybe<T> type
+            AstNode::Absent => Type::Any, // TODO: proper Maybe<T> type
+
             // === Variables ===
             AstNode::Ident(name) => {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
@@ -358,17 +368,51 @@ impl SemanticAnalyzer {
             }
 
             // === Statements ===
-            AstNode::BindStmt { name, value } => {
+            AstNode::BindStmt { name, typ, value } => {
                 let value_type = self.analyze_node(value);
-                if let Err(e) = self.symbol_table.define(name.clone(), value_type, false) {
+
+                // If type annotation is provided, check compatibility
+                let declared_type = if let Some(type_ann) = typ {
+                    let t = Self::convert_type_annotation(type_ann);
+                    // Check value matches declared type
+                    if !t.is_compatible(&value_type) {
+                        self.errors.push(SemanticError::TypeError {
+                            expected: t.name().to_string(),
+                            got: value_type.name().to_string(),
+                            context: format!("binding '{}'", name),
+                        });
+                    }
+                    t
+                } else {
+                    value_type
+                };
+
+                if let Err(e) = self.symbol_table.define(name.clone(), declared_type, false) {
                     self.errors.push(e);
                 }
                 Type::Nothing
             }
 
-            AstNode::WeaveStmt { name, value } => {
+            AstNode::WeaveStmt { name, typ, value } => {
                 let value_type = self.analyze_node(value);
-                if let Err(e) = self.symbol_table.define(name.clone(), value_type, true) {
+
+                // If type annotation is provided, check compatibility
+                let declared_type = if let Some(type_ann) = typ {
+                    let t = Self::convert_type_annotation(type_ann);
+                    // Check value matches declared type
+                    if !t.is_compatible(&value_type) {
+                        self.errors.push(SemanticError::TypeError {
+                            expected: t.name().to_string(),
+                            got: value_type.name().to_string(),
+                            context: format!("weaving '{}'", name),
+                        });
+                    }
+                    t
+                } else {
+                    value_type
+                };
+
+                if let Err(e) = self.symbol_table.define(name.clone(), declared_type, true) {
                     self.errors.push(e);
                 }
                 Type::Nothing
@@ -396,11 +440,28 @@ impl SemanticAnalyzer {
                 Type::Nothing
             }
 
-            AstNode::ChantDef { name, params, body } => {
+            AstNode::ChantDef { name, params, return_type, body } => {
+                // Extract parameter types from annotations
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        p.typ
+                            .as_ref()
+                            .map(|t| Self::convert_type_annotation(t))
+                            .unwrap_or(Type::Any)
+                    })
+                    .collect();
+
+                // Extract return type from annotation
+                let ret_type = return_type
+                    .as_ref()
+                    .map(|t| Self::convert_type_annotation(t))
+                    .unwrap_or(Type::Any);
+
                 // Define function in current scope
                 let func_type = Type::Function {
-                    params: vec![Type::Any; params.len()],  // Simplified for now
-                    return_type: Box::new(Type::Any),
+                    params: param_types.clone(),
+                    return_type: Box::new(ret_type),
                 };
 
                 if let Err(e) = self.symbol_table.define(name.clone(), func_type, false) {
@@ -411,9 +472,9 @@ impl SemanticAnalyzer {
                 self.symbol_table.push_scope();
                 self.in_function = true;
 
-                // Define parameters
-                for param in params {
-                    let _ = self.symbol_table.define(param.clone(), Type::Any, false);
+                // Define parameters with their types
+                for (param, param_type) in params.iter().zip(param_types.iter()) {
+                    let _ = self.symbol_table.define(param.name.clone(), param_type.clone(), false);
                 }
 
                 // Analyze body
@@ -425,6 +486,25 @@ impl SemanticAnalyzer {
                 self.symbol_table.pop_scope();
 
                 Type::Nothing
+            }
+
+            AstNode::FormDef { name, fields: _ } => {
+                // Define struct type in current scope
+                // For now, we'll use Type::Any as a placeholder
+                // In a more complete implementation, we'd have a Type::Struct variant
+                if let Err(e) = self.symbol_table.define(name.clone(), Type::Any, false) {
+                    self.errors.push(e);
+                }
+                Type::Nothing
+            }
+
+            AstNode::StructLiteral { struct_name, fields: _ } => {
+                // Check that the struct type exists
+                if self.symbol_table.lookup(struct_name).is_none() {
+                    self.errors.push(SemanticError::UndefinedVariable(struct_name.clone()));
+                }
+                // Return Any for now - in future could be Type::Struct(struct_name)
+                Type::Any
             }
 
             AstNode::YieldStmt { value } => {
@@ -506,9 +586,30 @@ impl SemanticAnalyzer {
                 let right_type = self.analyze_node(right);
 
                 match op {
-                    BinaryOperator::Add | BinaryOperator::Sub |
-                    BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => {
-                        // Arithmetic requires numbers
+                    BinaryOperator::Add => {
+                        // Add works for Number + Number (arithmetic) and Text + Text (concatenation)
+                        match (&left_type, &right_type) {
+                            // Number + Number => Number
+                            (Type::Number, Type::Number) => Type::Number,
+                            // Text + Text => Text
+                            (Type::Text, Type::Text) => Type::Text,
+                            // Any/Unknown can be either
+                            (Type::Any, _) | (_, Type::Any) => Type::Any,
+                            (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
+                            // Mixed types are errors
+                            _ => {
+                                self.errors.push(SemanticError::TypeError {
+                                    expected: "Number or Text".to_string(),
+                                    got: format!("{} + {}", left_type.name(), right_type.name()),
+                                    context: "addition/concatenation requires matching types".to_string(),
+                                });
+                                Type::Unknown
+                            }
+                        }
+                    }
+
+                    BinaryOperator::Sub | BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => {
+                        // Other arithmetic requires numbers only
                         if !matches!(left_type, Type::Number | Type::Any | Type::Unknown) {
                             self.errors.push(SemanticError::TypeError {
                                 expected: "Number".to_string(),
@@ -716,9 +817,48 @@ impl SemanticAnalyzer {
             }
 
             // === Not Yet Implemented ===
-            AstNode::MatchStmt { .. } => {
-                // TODO: Implement pattern matching analysis
-                Type::Any
+            AstNode::MatchStmt { value, arms } => {
+                use crate::ast::Pattern;
+
+                // Analyze the value being matched
+                let _match_type = self.analyze_node(value);
+
+                // Check exhaustiveness: a match is exhaustive if it has:
+                // 1. A wildcard pattern (otherwise), OR
+                // 2. An identifier pattern (variable binding - matches anything)
+                let has_catch_all = arms.iter().any(|arm| {
+                    matches!(arm.pattern, Pattern::Wildcard | Pattern::Ident(_))
+                });
+
+                if !has_catch_all {
+                    self.errors.push(SemanticError::NonExhaustiveMatch {
+                        message: "Match expression must have a catch-all pattern (wildcard or variable binding)".to_string(),
+                    });
+                }
+
+                // Analyze each arm's body
+                let mut arm_types = Vec::new();
+                for arm in arms {
+                    // Push new scope for pattern variables
+                    self.symbol_table.push_scope();
+
+                    // If pattern is an identifier, add it to scope
+                    if let Pattern::Ident(var_name) = &arm.pattern {
+                        // Bind the variable with Any type (we don't know the exact type yet)
+                        let _ = self.symbol_table.define(var_name.clone(), Type::Any, false);
+                    }
+
+                    // Analyze arm body
+                    for stmt in &arm.body {
+                        arm_types.push(self.analyze_node(stmt));
+                    }
+
+                    // Pop scope
+                    self.symbol_table.pop_scope();
+                }
+
+                // Return the type of the first arm (simplified - could unify all arm types)
+                arm_types.first().cloned().unwrap_or(Type::Nothing)
             }
 
             AstNode::AttemptStmt { .. } => {
@@ -742,10 +882,130 @@ impl SemanticAnalyzer {
             }
         }
     }
+
+    /// Convert AST TypeAnnotation to semantic Type
+    fn convert_type_annotation(ann: &crate::ast::TypeAnnotation) -> Type {
+        use crate::ast::TypeAnnotation;
+        match ann {
+            TypeAnnotation::Named(name) => match name.as_str() {
+                "Number" => Type::Number,
+                "Text" => Type::Text,
+                "Truth" => Type::Truth,
+                "Nothing" => Type::Nothing,
+                "Map" => Type::Map,
+                _ => Type::Unknown, // Unknown type name
+            },
+            TypeAnnotation::List(inner) => {
+                Type::List(Box::new(Self::convert_type_annotation(inner)))
+            }
+            TypeAnnotation::Map => Type::Map,
+            TypeAnnotation::Function { param_types, return_type } => Type::Function {
+                params: param_types
+                    .iter()
+                    .map(|t| Self::convert_type_annotation(t))
+                    .collect(),
+                return_type: Box::new(Self::convert_type_annotation(return_type)),
+            },
+            TypeAnnotation::Optional(_) => {
+                // Optional types not yet supported, treat as Any for now
+                Type::Any
+            }
+        }
+    }
 }
 
 /// Analyze a Glimmer-Weave program for semantic errors
 pub fn analyze(nodes: &[AstNode]) -> Result<(), Vec<SemanticError>> {
     let mut analyzer = SemanticAnalyzer::new();
     analyzer.analyze(nodes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::*;
+
+    #[test]
+    fn test_exhaustive_match_with_wildcard() {
+        // match 1 with
+        //     when 1 then 100
+        //     otherwise then 999
+        // end
+        let ast = vec![AstNode::MatchStmt {
+            value: Box::new(AstNode::Number(1.0)),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Literal(AstNode::Number(1.0)),
+                    body: vec![AstNode::Number(100.0)],
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    body: vec![AstNode::Number(999.0)],
+                },
+            ],
+        }];
+
+        let mut analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&ast);
+
+        // Should not have any errors - match is exhaustive
+        assert!(result.is_ok(), "Expected no errors but got: {:?}", result);
+    }
+
+    #[test]
+    fn test_exhaustive_match_with_variable_binding() {
+        // match 42 with
+        //     when n then n * 2
+        // end
+        let ast = vec![AstNode::MatchStmt {
+            value: Box::new(AstNode::Number(42.0)),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Ident("n".to_string()),
+                    body: vec![AstNode::BinaryOp {
+                        left: Box::new(AstNode::Ident("n".to_string())),
+                        op: BinaryOperator::Mul,
+                        right: Box::new(AstNode::Number(2.0)),
+                    }],
+                },
+            ],
+        }];
+
+        let mut analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&ast);
+
+        // Should not have any errors - match is exhaustive
+        assert!(result.is_ok(), "Expected no errors but got: {:?}", result);
+    }
+
+    #[test]
+    fn test_non_exhaustive_match() {
+        // match 2 with
+        //     when 1 then 100
+        //     when 2 then 200
+        // end
+        // Missing catch-all!
+        let ast = vec![AstNode::MatchStmt {
+            value: Box::new(AstNode::Number(2.0)),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Literal(AstNode::Number(1.0)),
+                    body: vec![AstNode::Number(100.0)],
+                },
+                MatchArm {
+                    pattern: Pattern::Literal(AstNode::Number(2.0)),
+                    body: vec![AstNode::Number(200.0)],
+                },
+            ],
+        }];
+
+        let mut analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&ast);
+
+        // Should have a non-exhaustive match error
+        assert!(result.is_err(), "Expected error for non-exhaustive match");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::NonExhaustiveMatch { .. }));
+    }
 }

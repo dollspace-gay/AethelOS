@@ -114,6 +114,7 @@ impl Parser {
             Token::For => self.parse_for(),
             Token::Whilst => self.parse_while(),
             Token::Chant => self.parse_chant_def(),
+            Token::Form => self.parse_form_def(),
             Token::Yield => self.parse_yield(),
             Token::Match => self.parse_match(),
             Token::Attempt => self.parse_attempt(),
@@ -126,7 +127,7 @@ impl Parser {
         }
     }
 
-    /// Parse: bind x to 42
+    /// Parse: bind x to 42  OR  bind x: Number to 42
     fn parse_bind(&mut self) -> ParseResult<AstNode> {
         self.expect(Token::Bind)?;
 
@@ -141,14 +142,21 @@ impl Parser {
         };
         self.advance();
 
+        // Check for optional type annotation: ': Type'
+        let typ = if self.match_token(Token::Colon) {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
+
         self.expect(Token::To)?;
 
         let value = Box::new(self.parse_expression()?);
 
-        Ok(AstNode::BindStmt { name, value })
+        Ok(AstNode::BindStmt { name, typ, value })
     }
 
-    /// Parse: weave counter as 0
+    /// Parse: weave counter as 0  OR  weave counter: Number as 0
     fn parse_weave(&mut self) -> ParseResult<AstNode> {
         self.expect(Token::Weave)?;
 
@@ -163,11 +171,18 @@ impl Parser {
         };
         self.advance();
 
+        // Check for optional type annotation: ': Type'
+        let typ = if self.match_token(Token::Colon) {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
+
         self.expect(Token::As)?;
 
         let value = Box::new(self.parse_expression()?);
 
-        Ok(AstNode::WeaveStmt { name, value })
+        Ok(AstNode::WeaveStmt { name, typ, value })
     }
 
     /// Parse: set counter to 10
@@ -304,24 +319,34 @@ impl Parser {
         };
         self.advance();
 
-        // Parse parameters
+        // Parse parameters with optional type annotations
         self.expect(Token::LeftParen)?;
 
         let mut params = Vec::new();
         if !matches!(self.current(), Token::RightParen) {
             loop {
-                match self.current() {
-                    Token::Ident(p) => {
-                        params.push(p.clone());
-                        self.advance();
-                    }
+                let param_name = match self.current() {
+                    Token::Ident(p) => p.clone(),
                     _ => {
                         return Err(ParseError {
                             message: "Expected parameter name".to_string(),
                             position: self.position,
                         })
                     }
-                }
+                };
+                self.advance();
+
+                // Check for optional type annotation: ': Type'
+                let param_type = if self.match_token(Token::Colon) {
+                    Some(self.parse_type_annotation()?)
+                } else {
+                    None
+                };
+
+                params.push(Parameter {
+                    name: param_name,
+                    typ: param_type,
+                });
 
                 if !self.match_token(Token::Comma) {
                     break;
@@ -330,6 +355,14 @@ impl Parser {
         }
 
         self.expect(Token::RightParen)?;
+
+        // Check for optional return type: '-> Type'
+        let return_type = if self.match_token(Token::Arrow) {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
+
         self.expect(Token::Then)?;
         self.skip_newlines();
 
@@ -341,7 +374,61 @@ impl Parser {
 
         self.expect(Token::End)?;
 
-        Ok(AstNode::ChantDef { name, params, body })
+        Ok(AstNode::ChantDef {
+            name,
+            params,
+            return_type,
+            body,
+        })
+    }
+
+    /// Parse: form Person with name as Text age as Number end
+    fn parse_form_def(&mut self) -> ParseResult<AstNode> {
+        self.expect(Token::Form)?;
+
+        let name = match self.current() {
+            Token::Ident(n) => n.clone(),
+            _ => {
+                return Err(ParseError {
+                    message: "Expected identifier after 'form'".to_string(),
+                    position: self.position,
+                })
+            }
+        };
+        self.advance();
+
+        self.expect(Token::With)?;
+        self.skip_newlines();
+
+        let mut fields = Vec::new();
+        while !matches!(self.current(), Token::End | Token::Eof) {
+            // Parse field: name as Type
+            let field_name = match self.current() {
+                Token::Ident(n) => n.clone(),
+                _ => {
+                    return Err(ParseError {
+                        message: "Expected field name in struct definition".to_string(),
+                        position: self.position,
+                    })
+                }
+            };
+            self.advance();
+
+            self.expect(Token::As)?;
+
+            let field_type = self.parse_type_annotation()?;
+
+            fields.push(StructField {
+                name: field_name,
+                typ: field_type,
+            });
+
+            self.skip_newlines();
+        }
+
+        self.expect(Token::End)?;
+
+        Ok(AstNode::FormDef { name, fields })
     }
 
     /// Parse: yield result
@@ -425,6 +512,46 @@ impl Parser {
                 self.advance();
                 Ok(Pattern::Ident(n))
             }
+
+            // Enum patterns
+            Token::Triumph => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let inner = Box::new(self.parse_pattern()?);
+                self.expect(Token::RightParen)?;
+                Ok(Pattern::Enum {
+                    variant: "Triumph".to_string(),
+                    inner: Some(inner),
+                })
+            }
+            Token::Mishap => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let inner = Box::new(self.parse_pattern()?);
+                self.expect(Token::RightParen)?;
+                Ok(Pattern::Enum {
+                    variant: "Mishap".to_string(),
+                    inner: Some(inner),
+                })
+            }
+            Token::Present => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let inner = Box::new(self.parse_pattern()?);
+                self.expect(Token::RightParen)?;
+                Ok(Pattern::Enum {
+                    variant: "Present".to_string(),
+                    inner: Some(inner),
+                })
+            }
+            Token::Absent => {
+                self.advance();
+                Ok(Pattern::Enum {
+                    variant: "Absent".to_string(),
+                    inner: None,
+                })
+            }
+
             _ => Err(ParseError {
                 message: "Expected pattern".to_string(),
                 position: self.position,
@@ -570,10 +697,10 @@ impl Parser {
             let op = match self.current() {
                 Token::Is => BinaryOperator::Equal,
                 Token::IsNot => BinaryOperator::NotEqual,
-                Token::Greater => BinaryOperator::Greater,
-                Token::Less => BinaryOperator::Less,
-                Token::GreaterEq => BinaryOperator::GreaterEq,
-                Token::LessEq => BinaryOperator::LessEq,
+                Token::GreaterThan => BinaryOperator::Greater,
+                Token::LessThan => BinaryOperator::Less,
+                Token::AtLeast => BinaryOperator::GreaterEq,
+                Token::AtMost => BinaryOperator::LessEq,
                 _ => break,
             };
 
@@ -708,6 +835,48 @@ impl Parser {
                         index,
                     };
                 }
+                Token::LeftBrace => {
+                    // Struct literal: Person { name: "Alice", age: 30 }
+                    // Only valid if expr is an identifier
+                    if let AstNode::Ident(struct_name) = expr {
+                        self.advance(); // consume '{'
+
+                        let mut fields = Vec::new();
+                        if !matches!(self.current(), Token::RightBrace) {
+                            loop {
+                                // Parse field: name: value
+                                let field_name = match self.current() {
+                                    Token::Ident(n) => n.clone(),
+                                    _ => {
+                                        return Err(ParseError {
+                                            message: "Expected field name in struct literal".to_string(),
+                                            position: self.position,
+                                        })
+                                    }
+                                };
+                                self.advance();
+
+                                self.expect(Token::Colon)?;
+
+                                let field_value = self.parse_expression()?;
+                                fields.push((field_name, field_value));
+
+                                if !self.match_token(Token::Comma) {
+                                    break;
+                                }
+                            }
+                        }
+
+                        self.expect(Token::RightBrace)?;
+                        expr = AstNode::StructLiteral {
+                            struct_name,
+                            fields,
+                        };
+                    } else {
+                        // Not a struct literal, could be a map literal
+                        break;
+                    }
+                }
                 _ => break,
             }
         }
@@ -748,6 +917,34 @@ impl Parser {
             Token::LeftBrace => self.parse_map(),
             Token::Seek => self.parse_seek(),
             Token::Range => self.parse_range(),
+
+            // Enum constructors
+            Token::Triumph => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let value = Box::new(self.parse_expression()?);
+                self.expect(Token::RightParen)?;
+                Ok(AstNode::Triumph(value))
+            }
+            Token::Mishap => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let value = Box::new(self.parse_expression()?);
+                self.expect(Token::RightParen)?;
+                Ok(AstNode::Mishap(value))
+            }
+            Token::Present => {
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                let value = Box::new(self.parse_expression()?);
+                self.expect(Token::RightParen)?;
+                Ok(AstNode::Present(value))
+            }
+            Token::Absent => {
+                self.advance();
+                Ok(AstNode::Absent)
+            }
+
             _ => Err(ParseError {
                 message: alloc::format!("Unexpected token: {:?}", self.current()),
                 position: self.position,
@@ -827,10 +1024,10 @@ impl Parser {
             let operator = match self.current() {
                 Token::Is => QueryOperator::Is,
                 Token::IsNot => QueryOperator::IsNot,
-                Token::Greater => QueryOperator::Greater,
-                Token::Less => QueryOperator::Less,
-                Token::GreaterEq => QueryOperator::GreaterEq,
-                Token::LessEq => QueryOperator::LessEq,
+                Token::GreaterThan => QueryOperator::Greater,
+                Token::LessThan => QueryOperator::Less,
+                Token::AtLeast => QueryOperator::GreaterEq,
+                Token::AtMost => QueryOperator::LessEq,
                 Token::After => QueryOperator::After,
                 Token::Before => QueryOperator::Before,
                 _ => {
@@ -870,5 +1067,32 @@ impl Parser {
         self.expect(Token::RightParen)?;
 
         Ok(AstNode::Range { start, end })
+    }
+
+    /// Parse type annotation: Number, Text, List<Number>, Map, etc.
+    fn parse_type_annotation(&mut self) -> ParseResult<TypeAnnotation> {
+        match self.current() {
+            Token::Ident(type_name) => {
+                let name = type_name.clone();
+                self.advance();
+
+                // Check for generic type syntax: List<T>
+                if name == "List" && matches!(self.current(), Token::LeftAngle) {
+                    self.advance(); // consume <
+                    let inner_type = Box::new(self.parse_type_annotation()?);
+                    self.expect(Token::RightAngle)?;
+                    Ok(TypeAnnotation::List(inner_type))
+                } else if name == "Map" {
+                    Ok(TypeAnnotation::Map)
+                } else {
+                    // Simple named type: Number, Text, Truth, Nothing, etc.
+                    Ok(TypeAnnotation::Named(name))
+                }
+            }
+            _ => Err(ParseError {
+                message: "Expected type name".to_string(),
+                position: self.position,
+            }),
+        }
     }
 }

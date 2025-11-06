@@ -42,6 +42,12 @@
 // For now, use std to allow tests to run
 // #![cfg_attr(not(test), no_std)]
 
+// When not using no_std, we need to provide alloc items via std
+#[cfg(not(no_std))]
+extern crate std as alloc;
+
+// When using no_std, use the real alloc crate
+#[cfg(no_std)]
 extern crate alloc;
 
 pub mod token;
@@ -53,11 +59,14 @@ pub mod codegen;
 pub mod elf;
 pub mod runtime;
 pub mod semantic;
+pub mod bytecode;
+pub mod bytecode_compiler;
+pub mod vm;
 
 // Re-export commonly used types
 pub use token::{Token, Span};
 pub use lexer::Lexer;
-pub use ast::{AstNode, BinaryOperator, UnaryOperator};
+pub use ast::{AstNode, BinaryOperator, UnaryOperator, TypeAnnotation, Parameter};
 pub use parser::{Parser, ParseError, ParseResult};
 pub use eval::{Value, RuntimeError, Environment, Evaluator};
 pub use codegen::{CodeGen, Instruction, Register, compile_to_asm};

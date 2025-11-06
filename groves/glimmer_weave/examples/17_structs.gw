@@ -1,0 +1,71 @@
+# Glimmer-Weave Structs Example
+# Demonstrates custom data types with named fields
+
+# Define a Point struct
+form Point with
+    x as Number
+    y as Number
+end
+
+# Define a Person struct
+form Person with
+    name as Text
+    age as Number
+end
+
+# Define a Rectangle struct
+form Rectangle with
+    top_left as Point
+    bottom_right as Point
+end
+
+# Create some points
+bind origin to Point { x: 0, y: 0 }
+bind p1 to Point { x: 3, y: 4 }
+bind p2 to Point { x: 10, y: 20 }
+
+# Create some people
+bind alice to Person { name: "Alice", age: 30 }
+bind bob to Person { name: "Bob", age: 42 }
+
+# Access struct fields
+bind alice_name to alice.name
+bind bob_age to bob.age
+bind p1_x to p1.x
+bind p1_y to p1.y
+
+# Calculate distance from origin (Pythagorean theorem)
+chant distance_from_origin(point) then
+    bind x_squared to point.x * point.x
+    bind y_squared to point.y * point.y
+    yield x_squared + y_squared
+end
+
+bind dist1 to distance_from_origin(p1)  # Should be 25 (3^2 + 4^2)
+bind dist2 to distance_from_origin(p2)  # Should be 500 (10^2 + 20^2)
+
+# Create a rectangle using points
+bind rect to Rectangle {
+    top_left: Point { x: 0, y: 10 },
+    bottom_right: Point { x: 5, y: 0 }
+}
+
+# Access nested struct fields
+bind rect_width to rect.bottom_right.x - rect.top_left.x
+bind rect_height to rect.top_left.y - rect.bottom_right.y
+bind rect_area to rect_width * rect_height
+
+# Function to create a person with formatted greeting
+chant greet_person(person) then
+    yield person.name
+end
+
+bind greeting to greet_person(alice)
+
+# Multiple instances of the same struct type
+bind person1 to Person { name: "Charlie", age: 25 }
+bind person2 to Person { name: "Diana", age: 35 }
+bind person3 to Person { name: "Eve", age: 28 }
+
+# Return the final result: area of rectangle
+rect_area  # Should be 50 (5 * 10)

@@ -558,6 +558,51 @@ fn to_text(args: &[Value]) -> Result<Value, RuntimeError> {
         Value::NativeChant(native_fn) => format!("[NativeChant:{}]", native_fn.name),
         Value::Capability { .. } => "[Capability]".to_string(),
         Value::Range { .. } => "[Range]".to_string(),
+        Value::Outcome { success, value } => {
+            // Recursively convert inner value to text
+            let inner_text = to_text(&[*value.clone()])?;
+            if let Value::Text(inner) = inner_text {
+                if *success {
+                    format!("Triumph({})", inner)
+                } else {
+                    format!("Mishap({})", inner)
+                }
+            } else {
+                unreachable!("to_text always returns Text")
+            }
+        }
+        Value::Maybe { present, value } => {
+            if *present {
+                if let Some(v) = value {
+                    let inner_text = to_text(&[*v.clone()])?;
+                    if let Value::Text(inner) = inner_text {
+                        format!("Present({})", inner)
+                    } else {
+                        unreachable!("to_text always returns Text")
+                    }
+                } else {
+                    "Present(nothing)".to_string()
+                }
+            } else {
+                "Absent".to_string()
+            }
+        }
+        Value::StructDef { name, .. } => {
+            format!("[StructDef:{}]", name)
+        }
+        Value::StructInstance { struct_name, fields } => {
+            // Format as StructName { field1: value1, field2: value2 }
+            let mut field_strings = Vec::new();
+            for (k, v) in fields.iter() {
+                let v_text = to_text(&[v.clone()])?;
+                if let Value::Text(s) = v_text {
+                    field_strings.push(format!("{}: {}", k, s));
+                } else {
+                    unreachable!("to_text always returns Text")
+                }
+            }
+            format!("{} {{ {} }}", struct_name, field_strings.join(", "))
+        }
     };
     Ok(Value::Text(text))
 }

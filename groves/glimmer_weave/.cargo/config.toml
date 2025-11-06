@@ -9,3 +9,7 @@ target = "x86_64-pc-windows-msvc"
 # DO NOT build std from source for tests - use pre-compiled std
 # This prevents duplicate lang item errors
 # (Workspace config has build-std which we need to override)
+
+[unstable]
+# Explicitly disable build-std from workspace config
+# This prevents duplicate lang item errors when running tests
